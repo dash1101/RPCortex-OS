@@ -1376,6 +1376,15 @@ async def _shell_coro(username):
             continue
         try:
             _run_line(raw)
+        except SystemExit:
+            # rawrepl (and any SystemExit) — leave the loop CLEANLY and let
+            # _enter_async_shell re-raise from sync context after asyncio.run
+            # returns. This avoids relying on SystemExit propagating through
+            # asyncio.run (firmware-risky on the rp2 port; the web installer's
+            # rawrepl handoff depends on it reaching the REPL).
+            _shell_state['async_exit'] = 'systemexit'
+            _shell_state['running'] = False
+            return
         except MemoryError:
             import gc as _gc
             _cmd_cache.clear()
@@ -1434,8 +1443,23 @@ def _enter_async_shell(username):
         return False
     info("Async shell (EXPERIMENTAL): background tasks run while you type.", p="Launchpad")
     info("Editing is basic here (no history/completion yet). 'logout' to exit.", p="Launchpad")
+    global _async_active
     try:
         regedit.save('Settings.Async_Booting', '1')
+        # Make Ctrl+C a readable \x03 byte instead of a VM-level KeyboardInterrupt.
+        # The KI fires inside the asyncio poll and tears the whole event loop down,
+        # which ORPHANS the background services (their sockets, etc.) — that was the
+        # 'httpd dies / EADDRINUSE on Ctrl+C' bug. With the interrupt disabled,
+        # Ctrl+C is read by _async_input as \x03 and just cancels the input line;
+        # the loop and its services keep running. Restored in the finally below so
+        # a crash/SystemExit can never leave Ctrl+C globally disabled. (Best-effort:
+        # if the port ignores kbd_intr, the KeyboardInterrupt safety-net still
+        # catches it, and httpd's close-before-bind makes the respawn rebind cleanly.)
+        try:
+            import micropython as _mp
+            _mp.kbd_intr(-1)
+        except Exception:
+            pass
         # Seed background services (services.cfg) into the desired set ONCE for
         # this session, before the loop starts. register_service records them now
         # (sync context, no loop yet); the supervisor spawns them on entry.
@@ -1443,25 +1467,24 @@ def _enter_async_shell(username):
             _seed_services()
         except Exception:
             pass
-        # Ctrl+C in async mode surfaces as a KeyboardInterrupt from the event
-        # loop's poll (not as a readable \x03 byte), so it would otherwise unwind
-        # asyncio.run and crash the shell. Catch it, reset the loop, and re-enter
-        # the supervisor with a fresh prompt — the line is abandoned, the shell
-        # (and its background services) live on. The interrupt fires at the poll
-        # level, so the supervisor's finally does NOT run: its service task handles
-        # belong to the now-dead loop, so we drop them here and let the next
-        # supervisor entry respawn the desired set from its factories (httpd
-        # rebinds via SO_REUSEADDR). SystemExit (rawrepl) is a separate
-        # BaseException and still propagates out to main.py / the REPL.
-        global _async_active
+        # Safety net for ports that ignore kbd_intr: if a KeyboardInterrupt still
+        # unwinds asyncio.run, reset the loop and re-enter — the supervisor's
+        # finally won't have run, so drop the dead loop's service handles and let
+        # the next entry respawn the desired set (httpd's close-before-bind frees
+        # the port). gc.collect() helps finalise any abandoned socket first.
         while _shell_state.get('running'):
             try:
                 asyncio.run(_supervisor(username))
-                break                              # clean exit (logout / exit)
+                break                              # clean exit (logout / exit / rawrepl)
             except KeyboardInterrupt:
                 sys.stdout.write('^C\r\n')
                 _async_active = False
                 _reset_service_tasks()             # handles belong to the dead loop
+                try:
+                    import gc as _gc
+                    _gc.collect()
+                except Exception:
+                    pass
                 try:
                     asyncio.new_event_loop()       # reset after the interrupt
                 except Exception:
@@ -1479,9 +1502,18 @@ def _enter_async_shell(username):
         _desired_services.clear()
         _async_active = False
         try:
+            import micropython as _mp
+            _mp.kbd_intr(3)            # restore Ctrl+C -> KeyboardInterrupt
+        except Exception:
+            pass
+        try:
             asyncio.new_event_loop()   # reset loop state for the rest of this boot
         except Exception:
             pass
+    # rawrepl: _shell_coro caught the SystemExit and left the loop cleanly; re-raise
+    # it now from sync context (kbd_intr already restored) so it reaches the REPL.
+    if _shell_state.pop('async_exit', None) == 'systemexit':
+        raise SystemExit(0)
     return True
 
 
