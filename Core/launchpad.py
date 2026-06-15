@@ -1118,11 +1118,27 @@ def _bg_load_tasks():
     return rows
 
 
+def _shell_has_screen():
+    """True when the interactive prompt (not a full-screen app) owns the terminal.
+    Background printers gate visible output on this so they can't corrupt an app's
+    display. Defensive: if appkit is absent (old tree), assume the shell owns it."""
+    try:
+        import appkit
+        return appkit.shell_owns_screen()
+    except Exception:
+        return True
+
+
 def _run_due_tasks(restore=''):
     """Fire any scheduled tasks whose time has come. Best-effort, never raises.
     Returns True if at least one ran. `restore` (a string) is reprinted after the
     output so the caller's prompt/line is redrawn cleanly."""
     import utime as _ut
+    # Screen-ownership rule: while a full-screen app (e.g. sysmon) owns the
+    # terminal, do NOT fire tasks — their output would corrupt its display. The
+    # tasks stay due and fire when the shell prompt regains the screen.
+    if not _shell_has_screen():
+        return False
     rows = _bg_load_tasks()
     if not rows:
         return False
@@ -1368,12 +1384,62 @@ async def _scheduler_coro():
         await asyncio.sleep_ms(250)
 
 
+def _has_shell_ops(raw):
+    """True if the line uses shell operators (pipe / chain / redirect / multi),
+    in which case it can't be a single cooperative app and takes the sync path."""
+    for c in ('|', ';', '&', '>'):
+        if c in raw:
+            return True
+    return False
+
+
+def _resolve_async_app(cmd, args):
+    """If `cmd` maps to a module/scope exposing a cooperative '<func>_async' entry
+    point, return its coroutine (to be awaited as a foreground app); else None.
+    This is how a TUI like sysmon runs on the event loop — interleaving with
+    background services — while every other command takes the synchronous path."""
+    try:
+        if cmd not in commands:
+            return None
+        parts = commands[cmd].split(':', 1)
+        if len(parts) != 2:
+            return None
+        file_path, func_name = parts[0].strip(), parts[1].strip()
+        scope = _get_scope(file_path)
+        if scope is None:
+            return None
+        if isinstance(scope, dict):
+            fn = scope.get(func_name + '_async')
+        else:
+            fn = getattr(scope, func_name + '_async', None)
+        if fn is None:
+            return None
+        return fn(args)
+    except Exception:
+        return None
+
+
 async def _shell_coro(username):
     """Interactive prompt as a coroutine (Track B)."""
+    import appkit
     while _shell_state.get('running'):
         raw = (await _async_input(_prompt(username))).strip()
         if not raw:
             continue
+        # Cooperative foreground apps: a bare command whose module exposes an
+        # '<func>_async' entry runs on the event loop (so it interleaves with
+        # background services) via run_foreground, which owns the screen for it.
+        # Anything with shell operators, or with no async entry, takes the normal
+        # synchronous _run_line path (which still blocks the loop — Tier-1 limit).
+        if not _has_shell_ops(raw):
+            _sp = raw.split(None, 1)
+            _app = _resolve_async_app(_sp[0], _sp[1] if len(_sp) > 1 else None)
+            if _app is not None:
+                try:
+                    await appkit.run_foreground(_app, _sp[0])
+                except Exception as _e:
+                    error("App '{}' error: {}".format(_sp[0], _e))
+                continue
         try:
             _run_line(raw)
         except SystemExit:
