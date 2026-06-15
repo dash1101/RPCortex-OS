@@ -371,3 +371,55 @@ def settings(args=None):
         elif ch in ('r', 'R'):
             _full_draw()
         # any other key: ignore, no redraw
+
+
+# ---------------------------------------------------------------------------
+# Cooperative (async) settings panel — v1.0 "Vela" multitasking.
+# Same panel as settings(), but awaits keys via appkit so background services
+# (e.g. httpd --bg) keep running while the panel is open. The launchpad async
+# dispatcher finds this by the '<func>_async' name and runs it as a screen-owning
+# foreground app. The sync settings() above is unchanged — it's what the standard
+# shell uses, and what runs on older versions where appkit isn't present.
+# (Value-edit via _redit() still blocks briefly while you type a value; that's the
+# documented Tier-1 limit and fine for a focused edit.)
+# ---------------------------------------------------------------------------
+
+async def settings_async(args=None):
+    import appkit
+    global _sel
+    _full_draw()
+    while True:
+        ch = await appkit.read_key()
+        if ch == '':
+            continue
+        if ch == '\x1b':
+            seq = await appkit.read_escape()
+            if seq in ('\x1b[A', '\x1b[B'):
+                nav = _nav()
+                old = _sel
+                i = nav.index(_sel) if _sel in nav else 0
+                i = (i - 1) % len(nav) if seq == '\x1b[A' else (i + 1) % len(nav)
+                _sel = nav[i]
+                _update(old)
+                _update(_sel)
+            else:                                  # bare ESC (or other) = quit
+                sys.stdout.write('\x1b[2J\x1b[H')
+                ok("Settings saved.")
+                return
+            continue
+        if ch in ('q', 'Q', '\x03'):
+            sys.stdout.write('\x1b[2J\x1b[H')
+            ok("Settings saved.")
+            return
+        if ch in ('\r', '\n'):
+            _activate(_sel)
+            continue
+        k = ch.lower()
+        if k in _nav():
+            old = _sel
+            _sel = k
+            if old != _sel:
+                _update(old)
+            _activate(k)
+        elif ch in ('r', 'R'):
+            _full_draw()

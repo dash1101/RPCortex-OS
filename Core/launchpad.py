@@ -12,6 +12,7 @@ if "/Core" not in sys.path:
     sys.path.append("/Core")
 
 import regedit
+import lineedit
 from usrmgmt import decode
 from RPCortex import (
     fatal, error, info, warn, ok, multi,
@@ -158,10 +159,45 @@ def _load_lp(path):
 _cmd_cache   = {}               # file_path -> module or scope dict
 _history     = []               # command history (most recent last)
 _HIST_MAX    = 50
+_HIST_FILE   = '/Pulsar/Registry/history'   # history persisted across reboots
 _shell_state = {'running': False, 'home': '/', 'host': 'vela', 'stdin': None}  # mutable; cached scopes hold a reference
 _aliases     = {}               # name -> expanded command string (persisted to aliases.cfg)
 _ALIAS_CFG   = '/Pulsar/Registry/aliases.cfg'
 _STARTUP_CFG = '/Pulsar/Registry/startup.cfg'   # commands run once at shell start
+
+
+def _load_history():
+    """Load persisted command history (oldest-first) into _history, capped to
+    _HIST_MAX, then rewrite the file compacted so it never grows unbounded.
+    Best-effort: a missing file just means empty history (first boot)."""
+    try:
+        with open(_HIST_FILE) as f:
+            for ln in f:
+                ln = ln.rstrip('\n').rstrip('\r')
+                if ln:
+                    _history.append(ln)
+    except OSError:
+        return
+    if len(_history) > _HIST_MAX:
+        del _history[:len(_history) - _HIST_MAX]
+    try:                                   # compact the on-disk file to the cap
+        with open(_HIST_FILE, 'w') as f:
+            f.write('\n'.join(_history) + ('\n' if _history else ''))
+    except OSError:
+        pass
+
+
+def _history_add(line):
+    """Record an accepted command: append to _history (capped) and persist it so
+    Up-arrow recalls it after a reboot. Used by BOTH the sync and async readers."""
+    _history.append(line)
+    if len(_history) > _HIST_MAX:
+        _history.pop(0)
+    try:
+        with open(_HIST_FILE, 'a') as f:
+            f.write(line + '\n')
+    except OSError:
+        pass
 
 # ---------------------------------------------------------------------------
 # Critical built-in commands — inline handlers that NEVER go through exec().
@@ -175,24 +211,22 @@ _STARTUP_CFG = '/Pulsar/Registry/startup.cfg'   # commands run once at shell sta
 # ---------------------------------------------------------------------------
 
 def _crit_reboot(args=None):
-    import machine as _m
     info("Rebooting system...")
     close_session_log()
     try:
-        regedit.save("Settings.Startup", "0")  # mark as clean shutdown
+        regedit.save("Settings.Startup", "0")        # mark as clean shutdown
     except Exception:
         pass   # best-effort — reboot must always work even if registry write fails
-    _m.reset()
+    reboot_now('reset')
 
 def _crit_sreboot(args=None):
-    import machine as _m
     info("Performing soft reboot...")
     close_session_log()
     try:
-        regedit.save("Settings.Startup", "0")  # mark as clean shutdown
+        regedit.save("Settings.Startup", "0")        # mark as clean shutdown
     except Exception:
         pass
-    _m.soft_reset()
+    reboot_now('soft_reset')
 
 def _crit_alias(args=None):
     if not args:
@@ -232,18 +266,69 @@ def _crit_unalias(args=None):
         warn("No alias named '{}'.".format(name))
 
 
+# Exit-to-REPL signal. We must NOT raise SystemExit to leave the OS: on the rp2
+# port a SystemExit reaching the top of main.py is treated as PYEXEC_FORCED_EXIT
+# and triggers a SOFT REBOOT (the OS just restarts) instead of dropping to the
+# >>> REPL — that was the long-standing "rawrepl just soft-resets" bug. Instead
+# rawrepl sets this flag and clears 'running'; every loop in the shell + boot +
+# login chain returns when it's set, so main.py ends NORMALLY and the runtime
+# lands at the bare REPL (which the Web Installer needs to flash a fresh image).
+_exit_to_repl = False
+_reboot_request = None    # None | 'reset' | 'soft_reset' — set when a reboot is
+                          # asked for from INSIDE the async shell. machine.reset()
+                          # there drops to the REPL, so we exit the event loop and
+                          # reset from sync context (see _enter_async_shell).
+
+
+def request_repl():
+    """Ask the OS to unwind cleanly to the MicroPython REPL (see note above)."""
+    global _exit_to_repl
+    _exit_to_repl = True
+    _shell_state['running'] = False
+
+
+def repl_requested():
+    return _exit_to_repl
+
+
+def reboot_now(kind='reset'):
+    """Reboot the device safely from EITHER the sync or async shell.
+
+    A direct machine.reset()/soft_reset() called from inside the asyncio event
+    loop drops to the bare REPL on the rp2 port instead of rebooting (the same
+    class of bug as a SystemExit through asyncio.run). When the async shell is
+    active we therefore signal _enter_async_shell to perform the reset from sync
+    context once the loop returns; in the sync shell we reset immediately.
+
+    Any pre-reboot work (writing a stub, a countdown sleep, closing the log)
+    must be done BEFORE calling this, and this should be the LAST thing the
+    caller does: in the async shell it RETURNS (the reset happens a moment later
+    from sync context), so nothing after it may assume the device is gone.
+    `kind` is 'reset' (hard) or 'soft_reset'.
+    """
+    try:
+        regedit.save("Settings.Async_Booting", "0")  # deliberate reboot != async crash
+    except Exception:
+        pass
+    if _async_active:
+        global _reboot_request
+        _reboot_request = 'soft_reset' if kind == 'soft_reset' else 'reset'
+        _shell_state['running'] = False
+        return
+    import machine as _m
+    if kind == 'soft_reset':
+        _m.soft_reset()
+    else:
+        _m.reset()
+
+
 def _crit_rawrepl(args=None):
-    """Exit the entire OS and return to MicroPython REPL.
+    """Exit the entire OS and return to the MicroPython REPL.
 
-    Use this when you want to flash a fresh install via the Web Installer
-    without doing a full reinstall. After this command:
-      1. MicroPython REPL becomes active  (>>> prompt)
-      2. Open install.html in Chrome/Edge
-      3. Click Connect Device and flash normally
-
-    SystemExit (BaseException) propagates through all except-Exception
-    handlers and is not caught by the shell loop, initialization.py, or
-    main.py — MicroPython drops to REPL after main.py returns.
+    Use this to flash a fresh install via the Web Installer without a full
+    reinstall. After this command the >>> prompt is active; open install.html and
+    Connect Device. We unwind via request_repl() (NOT a SystemExit) so main.py
+    returns normally and the runtime reaches the REPL instead of soft-rebooting.
     """
     info("Exiting to MicroPython REPL...")
     multi("  Connect with the Web Installer: rpc.novalabs.app/install")
@@ -252,7 +337,7 @@ def _crit_rawrepl(args=None):
         regedit.save("Settings.Startup", "0")
     except Exception:
         pass
-    raise SystemExit(0)
+    request_repl()
 
 
 def _crit_freeup(args=None):
@@ -1279,6 +1364,46 @@ def list_services():
     return out
 
 
+# --- Async-loop self-test (the 'service test' diagnostic) ------------------
+# A zero-I/O background service that just bumps a counter every tick. It proves
+# the event loop keeps scheduling background services — INCLUDING while a
+# foreground async app (sysmon) owns the screen. If the beat count climbs over a
+# window during which an app was open, the multitasking model is live on this
+# hardware; if it flatlines, the loop was blocked (sync dispatch or a non-
+# yielding app). No screen output, so it can never corrupt an app's display.
+_selftest = {'beats': 0, 'first': 0, 'last': 0, 'interval': 250}
+
+
+async def _heartbeat_coro():
+    import asyncio
+    import utime as _ut
+    _selftest['beats'] = 0
+    _selftest['first'] = _ut.ticks_ms()
+    _selftest['last'] = _selftest['first']
+    while True:
+        _selftest['beats'] += 1
+        _selftest['last'] = _ut.ticks_ms()
+        await asyncio.sleep_ms(_selftest['interval'])
+
+
+def start_selftest(interval_ms=250):
+    """Register the heartbeat self-test service (started live if the loop is up)."""
+    _selftest['interval'] = interval_ms
+    return register_service('selftest', lambda: _heartbeat_coro())
+
+
+def stop_selftest():
+    return unregister_service('selftest')
+
+
+def selftest_report():
+    """Beats counted, elapsed window (ms), and whether the service is live."""
+    import utime as _ut
+    span = _ut.ticks_diff(_selftest['last'], _selftest['first'])
+    return {'beats': _selftest['beats'], 'span_ms': span,
+            'interval': _selftest['interval'], 'live': service_running('selftest')}
+
+
 def _seed_services():
     """Run services.cfg to populate the desired set. Each line is a shell command
     (e.g. 'httpd start --bg') whose handler calls register_service. Called once
@@ -1312,62 +1437,123 @@ def _reset_service_tasks():
 
 # --- Track B: asyncio shell (experimental) ---------------------------------
 
-async def _async_input(prompt):
-    """Minimal async line reader. Intentionally small (no history / cursor-nav /
-    completion yet) so the proven sync _shell_input stays the untouched fallback.
-    Yields to the event loop between keystrokes so background coroutines run."""
-    import asyncio
-    import select as _sel
+# Raw CSI/SS3 escape sequence -> LineEditor token. read_escape() returns the
+# full sequence (leading ESC included), so these keys match the sync reader.
+_ASYNC_SEQ = {
+    '\x1b[A': lineedit.UP,    '\x1b[B': lineedit.DOWN,
+    '\x1b[C': lineedit.RIGHT, '\x1b[D': lineedit.LEFT,
+    '\x1b[H': lineedit.HOME,  '\x1b[F': lineedit.END,
+    '\x1b[1~': lineedit.HOME, '\x1b[7~': lineedit.HOME,
+    '\x1b[4~': lineedit.END,  '\x1b[8~': lineedit.END,
+    '\x1b[3~': lineedit.DELETE,
+    '\x1b[1;5D': lineedit.WORD_LEFT,
+    '\x1b[1;5C': lineedit.WORD_RIGHT,
+    '\x1b[3;5~': lineedit.WORD_DEL,
+}
+
+
+async def _decode_async_key(ch):
+    """Map a raw key (or the start of an escape sequence) to a LineEditor token.
+    Returns a token, a 1-char printable string, or None (ignore). The backspace
+    byte mapping matches the sync reader: \\x08 = char, \\x7f / Ctrl+W = word."""
     global _skip_lf
-    sys.stdout.write(prompt)
-    buf = []
-    _shell_state['async_line'] = prompt
+    if _skip_lf:
+        _skip_lf = False
+        if ch == '\n':
+            return None                       # swallow the LF paired with a CR
+    if ch == '\r':
+        _skip_lf = True
+        return lineedit.ENTER
+    if ch == '\n':
+        return lineedit.ENTER
+    if ch == '\t':
+        return lineedit.TAB
+    if ch in ('\x03', '\x04'):
+        return lineedit.CANCEL
+    if ch == '\x08':
+        return lineedit.BACKSPACE
+    if ch in ('\x7f', '\x17'):
+        return lineedit.WORD_BACK
+    if ch == '\x01':
+        return lineedit.HOME
+    if ch == '\x05':
+        return lineedit.END
+    if ch == '\x1b':
+        import appkit
+        return _ASYNC_SEQ.get(await appkit.read_escape())
+    if ord(ch) >= 32:
+        return ch
+    return None
+
+
+def _render_async(prompt, ed, final=False, cancelled=False):
+    """Repaint the current line in place — a full single-row redraw (robust and
+    cheap at 115200 for a command line). Keeps _shell_state['async_line'] current
+    so a background task can cleanly reprint the prompt after it writes output."""
+    text = ed.line()
+    out = '\r\x1b[K' + prompt + text
+    if cancelled:
+        sys.stdout.write(out + '^C\r\n')
+        _shell_state['async_line'] = ''
+        return
+    if final:
+        sys.stdout.write(out + '\r\n')
+        _shell_state['async_line'] = ''
+        return
+    if ed.ghost:
+        out += '\033[2m\033[90m' + ed.ghost + '\033[0m'
+    back = len(ed.ghost) + (len(text) - ed.cursor)
+    if back > 0:
+        out += '\x1b[{}D'.format(back)
+    sys.stdout.write(out)
+    _shell_state['async_line'] = prompt + text
+
+
+async def _async_input(prompt):
+    """Full-featured async line reader: history, ghost + Tab completion, cursor
+    and word navigation, Home/End, and idle-logout — all built on the SHARED
+    LineEditor state machine, so the async shell matches the sync shell without
+    duplicating its ~300-line reader. Yields to the event loop between keys via
+    appkit.read_key(), so background services and the scheduler keep running
+    while you type. The sync _shell_input stays the untouched recovery fallback."""
+    import utime as _ut
+    import appkit
+    ed = lineedit.LineEditor(_history, completer=_tab_complete,
+                             word_left=_word_left, word_right=_word_right)
+    _render_async(prompt, ed)
+    idle_t0 = _ut.ticks_ms()
     while True:
-        try:
-            r = _sel.select([sys.stdin], [], [], 0)[0]
-        except Exception:
-            r = None
-        if not r:
-            await asyncio.sleep_ms(15)        # the cooperative yield point
+        ch = await appkit.read_key(timeout_ms=500)
+        if ch == '':                          # idle slice — no key this round
+            if ed.is_empty():
+                _apply_dyn_clock(False)
+                if _shell_state.get('idle_enabled'):
+                    try:
+                        _mins = int(regedit.read('Settings.Idle_Logout') or 0)
+                    except Exception:
+                        _mins = 0
+                    if _mins > 0 and _ut.ticks_diff(_ut.ticks_ms(), idle_t0) >= _mins * 60000:
+                        sys.stdout.write('\r\n')
+                        warn("Session timed out after {} min of inactivity.".format(_mins))
+                        _shell_state['running'] = False
+                        return ''
             continue
-        ch = sys.stdin.read(1)
-        if _skip_lf:
-            _skip_lf = False
-            if ch == '\n':
-                continue
-        if ch in ('\r', '\n'):
-            if ch == '\r':
-                _skip_lf = True
-            sys.stdout.write('\r\n')
-            _shell_state['async_line'] = ''
-            return ''.join(buf)
-        if ch in ('\x7f', '\x08'):
-            if buf:
-                buf.pop()
-                sys.stdout.write('\x08 \x08')
-        elif ch == '\x03':                    # Ctrl+C — cancel the line
-            sys.stdout.write('^C\r\n')
-            _shell_state['async_line'] = ''
+        _apply_dyn_clock(True)
+        idle_t0 = _ut.ticks_ms()              # any key resets the idle timer
+        tok = await _decode_async_key(ch)
+        if tok is None:
+            continue
+        sig = ed.feed(tok)
+        if sig == 'submit':
+            _render_async(prompt, ed, final=True)
+            line = ed.line()
+            if line.strip():
+                _history_add(line)
+            return line
+        if sig == 'cancel':
+            _render_async(prompt, ed, cancelled=True)
             return ''
-        elif ch == '\x1b':                    # swallow a full escape sequence
-            # Arrows / Ctrl+arrows etc. are CSI/SS3 seqs: ESC [ (or ESC O) then
-            # parameter bytes, ended by a final byte 0x40-0x7e. Consume the whole
-            # thing so e.g. Ctrl+Up (ESC [ 1 ; 5 A) never leaks ';5A' onto the line.
-            try:
-                if _sel.select([sys.stdin], [], [], 0.02)[0]:
-                    nxt = sys.stdin.read(1)
-                    if nxt in ('[', 'O'):
-                        for _ in range(10):
-                            if not _sel.select([sys.stdin], [], [], 0.02)[0]:
-                                break
-                            if '@' <= sys.stdin.read(1) <= '~':   # final byte
-                                break
-            except Exception:
-                pass
-        elif ord(ch) >= 32:
-            buf.append(ch)
-            sys.stdout.write(ch)
-        _shell_state['async_line'] = prompt + ''.join(buf)
+        _render_async(prompt, ed)
 
 
 async def _scheduler_coro():
@@ -1443,13 +1629,10 @@ async def _shell_coro(username):
         try:
             _run_line(raw)
         except SystemExit:
-            # rawrepl (and any SystemExit) — leave the loop CLEANLY and let
-            # _enter_async_shell re-raise from sync context after asyncio.run
-            # returns. This avoids relying on SystemExit propagating through
-            # asyncio.run (firmware-risky on the rp2 port; the web installer's
-            # rawrepl handoff depends on it reaching the REPL).
-            _shell_state['async_exit'] = 'systemexit'
-            _shell_state['running'] = False
+            # rawrepl now unwinds via request_repl() (no SystemExit), but stay
+            # defensive: if anything raises SystemExit, request the REPL and leave
+            # the loop cleanly so we unwind to >>> rather than soft-rebooting.
+            request_repl()
             return
         except MemoryError:
             import gc as _gc
@@ -1470,6 +1653,15 @@ async def _supervisor(username):
         _spawn_all_services()
     except Exception:
         pass
+    # Async init succeeded — we're running inside asyncio.run on the event loop.
+    # Clear the boot sentinel now so a LATER clean reboot/sreboot, OTA update, or
+    # unrelated power-loss isn't mistaken for a wedged async boot. A hang or crash
+    # DURING init never reaches here, so it still leaves the sentinel set and the
+    # next boot falls back to the classic shell once (the real safety net).
+    try:
+        regedit.save('Settings.Async_Booting', '0')
+    except Exception:
+        pass
     sched = asyncio.create_task(_scheduler_coro())
     try:
         await _shell_coro(username)
@@ -1487,7 +1679,10 @@ def _enter_async_shell(username):
     full session ran; False (fall through to the sync loop) when off, crashed
     last time, or unavailable. SystemExit (rawrepl) propagates out to the REPL."""
     try:
-        if (regedit.read('Settings.Async_Shell') or 'false') != 'true':
+        # v1.0: the multitasking (async) shell is the DEFAULT — an absent key
+        # means async-on. 'asyncmode off' (Settings.Async_Shell=false) opts out to
+        # the classic synchronous shell, which also stays the recovery fallback.
+        if (regedit.read('Settings.Async_Shell') or 'true') != 'true':
             return False
     except Exception:
         return False
@@ -1507,9 +1702,8 @@ def _enter_async_shell(username):
     except ImportError:
         warn("asyncio isn't available on this build — using the standard shell.")
         return False
-    info("Async shell (EXPERIMENTAL): background tasks run while you type.", p="Launchpad")
-    info("Editing is basic here (no history/completion yet). 'logout' to exit.", p="Launchpad")
-    global _async_active
+    info("Multitasking shell — background services keep running while you work.", p="Launchpad")
+    global _async_active, _reboot_request
     try:
         regedit.save('Settings.Async_Booting', '1')
         # Make Ctrl+C a readable \x03 byte instead of a VM-level KeyboardInterrupt.
@@ -1576,10 +1770,21 @@ def _enter_async_shell(username):
             asyncio.new_event_loop()   # reset loop state for the rest of this boot
         except Exception:
             pass
-    # rawrepl: _shell_coro caught the SystemExit and left the loop cleanly; re-raise
-    # it now from sync context (kbd_intr already restored) so it reaches the REPL.
-    if _shell_state.pop('async_exit', None) == 'systemexit':
-        raise SystemExit(0)
+    # A reboot requested from INSIDE the async shell is performed here, from sync
+    # context: machine.reset()/soft_reset() inside asyncio.run drops to the bare
+    # REPL instead of rebooting, so _crit_reboot/_crit_sreboot only signal and we
+    # reset now that the event loop has fully returned.
+    if _reboot_request:
+        import machine as _m
+        _kind = _reboot_request
+        _reboot_request = None
+        if _kind == 'reset':
+            _m.reset()
+        else:
+            _m.soft_reset()
+    # rawrepl now unwinds via request_repl() (a clean return all the way out to
+    # main.py), NOT a SystemExit through asyncio.run — raising SystemExit here
+    # reached the top of main.py and soft-rebooted instead of dropping to >>>.
     return True
 
 
@@ -1719,9 +1924,7 @@ def _shell_input(prompt):
             sys.stdout.write('\r\n')
             line = ''.join(buf)
             if line.strip():
-                _history.append(line)
-                if len(_history) > _HIST_MAX:
-                    _history.pop(0)
+                _history_add(line)
             return line
 
         # --- Backspace (delete one char before cursor) ---
@@ -1946,6 +2149,7 @@ def launchpad_init(username, password, auth=True):
 
     load_commands()
     init_session_log()
+    _load_history()      # restore command history so Up-arrow works after a reboot
 
     # Proactive GC: with the command tables loaded, the heap is at its working
     # baseline. Setting a threshold makes MicroPython collect *before* the heap
@@ -1993,7 +2197,8 @@ def launchpad_init(username, password, auth=True):
     # background tasks fire even while you type. Crash-guarded; returns True only
     # after a full session, else we fall through to the proven sync loop below.
     if _enter_async_shell(username):
-        ok("Goodbye, {}.".format(username), p="Launchpad")
+        if not repl_requested():
+            ok("Goodbye, {}.".format(username), p="Launchpad")
         close_session_log()
         return
 

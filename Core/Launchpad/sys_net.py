@@ -205,17 +205,42 @@ def curl(args=None):
 
 
 def ping(args=None):
-    if not args:
-        warn("Usage: ping <host> [count]")
+    if args and args.strip().lower() in ('help', '-h', '--help', '?'):
+        multi("ping — TCP reachability test (measures round-trip time).")
+        multi("Usage: ping <host> [count] [-p <port>]")
+        multi("  <host>      hostname or IP (e.g. google.com, 8.8.8.8)")
+        multi("  [count]     number of probes (default 4)")
+        multi("  -p <port>   probe a specific TCP port (default: auto 443/80/53)")
+        multi("Press Ctrl+C or 'q' to stop early.")
         return
-    parts = args.strip().split(None, 1)
-    host  = parts[0]
+    if not args:
+        warn("Usage: ping <host> [count] [-p <port>]")
+        return
+    host  = None
     count = 4
-    if len(parts) > 1:
-        try:
-            count = int(parts[1])
-        except ValueError:
-            warn("Invalid count — defaulting to 4.")
+    port  = None
+    toks = args.split()
+    j = 0
+    while j < len(toks):
+        t = toks[j]
+        if t in ('-p', '--port') and j + 1 < len(toks):
+            try:
+                port = int(toks[j + 1])
+            except ValueError:
+                warn("Invalid port — ignoring.")
+            j += 2
+            continue
+        if host is None:
+            host = t
+        else:
+            try:
+                count = int(t)
+            except ValueError:
+                pass
+        j += 1
+    if not host:
+        warn("Usage: ping <host> [count] [-p <port>]")
+        return
     from net import ping as _ping, is_available, online
     if not is_available():
         error("WiFi not available on this board.")
@@ -223,7 +248,7 @@ def ping(args=None):
     if not online():
         error("Not connected to WiFi. Run: wifi connect")
         return
-    _ping(host, count=count)
+    _ping(host, count=count, port=port)
 
 
 def nslookup(args=None):

@@ -384,6 +384,9 @@ def start(arg):
                 regedit.save("Settings.Startup", "0")
                 ok("Autonomous mode: running as '{}' (no login).".format(_auto), p="Boot")
                 _boot(_auto, '', auth=False)
+                from Core.launchpad import repl_requested
+                if repl_requested():
+                    return
                 info("Autonomous shell exited — falling back to login.")
             else:
                 warn("Autonomous user '{}' not found — using normal login.".format(_auto))
@@ -493,6 +496,9 @@ def login_seq():
     - NOPASS accounts (guest) are logged in immediately without a password prompt.
     - Normal accounts require password with 3-attempt lockout.
     """
+    from Core.launchpad import repl_requested
+    if repl_requested():
+        return          # rawrepl was requested — unwind to the REPL, don't re-login
     info("=== Login ===")
     multi("  Type 'root' or 'guest' to log in.")
     multi("")
@@ -510,12 +516,15 @@ def login_seq():
             continue
 
         # rawrepl at login — drop to the bare MicroPython REPL so the Web
-        # Installer can flash a fresh image even when no one is logged in.
-        # SystemExit is a BaseException: it propagates past start()'s
-        # `except Exception` and out of main.py, leaving the >>> prompt active.
+        # Installer can flash a fresh image even when no one is logged in. We
+        # unwind via request_repl() (a clean return out to main.py), NOT a
+        # SystemExit: a SystemExit reaching main.py soft-reboots the rp2 runtime
+        # instead of leaving the >>> prompt active (the long-standing rawrepl bug).
         if username == 'rawrepl':
             multi("Exiting to MicroPython REPL...")
-            raise SystemExit(0)
+            from Core.launchpad import request_repl
+            request_repl()
+            return
 
         # _pkgs at login — emit the machine-readable installed-package manifest
         # so the web package browser can show install state without a session.
@@ -612,6 +621,12 @@ def Startup_Process(username, password):
     import gc
     gc.collect()
     _boot(username, password)
+    # If the shell asked to exit to the bare REPL (rawrepl), unwind cleanly all
+    # the way out to main.py instead of re-entering login — returning normally is
+    # what lands at >>> (a SystemExit here would soft-reboot the rp2 runtime).
+    from Core.launchpad import repl_requested
+    if repl_requested():
+        return
     # Shell returned — re-enter login loop
     info("Shell exited.  Returning to login.")
     login_seq()

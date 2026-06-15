@@ -23,8 +23,9 @@ __pycache__/
 *.pyd
 *.mpy
 
-# ── Build outputs (local .rpc release archives) ───────────────────
+# ── Build outputs (local .rpc release archives + staged image trees) ──
 *.rpc
+/dist/
 
 # ── OS / editor junk ──────────────────────────────────────────────
 .DS_Store
