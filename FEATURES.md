@@ -1,8 +1,11 @@
 # RPCortex — Feature List
 
-**RPCortex Pulsar — v0.9.5** · MicroPython operating system for RP2040 / RP2350
-(and ESP32-S3). Serial-first (PuTTY @ 115200). Single source of truth for the
-running version lives in `Core/RPCortex.py` (`OS_VERSION` / `OS_CODENAME`).
+**RPCortex Vela — v1.0.0 (developer build)** · MicroPython operating system for
+RP2040 / RP2350 (and ESP32-S3). Serial-first (PuTTY @ 115200). Single source of
+truth for the running version lives in `Core/RPCortex.py` (`OS_VERSION` /
+`OS_CODENAME`). Headline: **true multitasking** — a cooperative app framework
+(`Core/appkit.py`) lets a foreground app (e.g. `sysmon`) run alongside background
+services (e.g. `httpd --bg`). The v0.9.5 multitasking foundation is folded in.
 
 > This is a capabilities overview. For internals see `CLAUDE.md`; for the
 > strategic roadmap see `ROADMAP.md` and [rpc.novalabs.app/roadmap](https://rpc.novalabs.app/roadmap);
