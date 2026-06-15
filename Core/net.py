@@ -627,49 +627,124 @@ def run_url(url, keep=False):
 # Ping  (TCP connect test — ICMP not available in standard MicroPython)
 # ---------------------------------------------------------------------------
 
-def ping(host, count=4, port=80):
+def _aborted():
+    """Non-blocking check for a Ctrl+C / 'q' keypress so a loop can stop early.
+    Works in the async shell too, where Ctrl+C arrives as a \\x03 byte (kbd_intr
+    is disabled) rather than a KeyboardInterrupt. Best-effort; never raises."""
+    try:
+        import select
+        if select.select([sys.stdin], [], [], 0)[0]:
+            return sys.stdin.read(1) in ('\x03', '\x04', 'q', 'Q')
+    except Exception:
+        pass
+    return False
+
+
+def _is_refused(e):
+    """True when an OSError from connect() is a TCP RST (connection refused/reset)
+    — which still proves the host is UP, just not listening on that port."""
+    try:
+        eno = e.args[0] if e.args else None
+    except Exception:
+        return False
+    try:
+        import errno
+        for name in ('ECONNREFUSED', 'ECONNRESET'):
+            if hasattr(errno, name) and eno == getattr(errno, name):
+                return True
+    except Exception:
+        pass
+    return eno in (104, 111, 61, 54)     # common ECONNRESET / ECONNREFUSED values
+
+
+def ping(host, count=4, port=None):
     """
-    TCP-based connectivity test. Connects to host:port and measures RTT.
-    Real ICMP ping is unavailable on most MicroPython builds; this is the
-    closest equivalent and works for diagnosing reachability.
+    TCP-based reachability test (real ICMP ping isn't available on most
+    MicroPython builds). Opens a TCP connection and measures the round-trip.
+
+    Why a port list: many hosts don't answer on port 80 — e.g. 8.8.8.8 serves
+    53/443, so the old port-80 probe timed out every time. With no explicit port
+    we probe a few common ports [443, 80, 53] on the first packet and lock onto
+    whichever answers; an actively REFUSED connection (a TCP RST) still proves the
+    host is up and counts as reachable. Press Ctrl+C or 'q' to stop early.
     """
     import socket
     import utime
 
-    info("PING {} (TCP/{})  {} packets".format(host, port, count))
+    if port is None:
+        ports = (443, 80, 53)
+        port_label = 'auto'
+    else:
+        ports = (port,)
+        port_label = str(port)
+
+    info("PING {} (TCP/{})  {} packets".format(host, port_label, count))
 
     try:
-        ai = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
-        ip = ai[0][-1][0]
+        ip = socket.getaddrinfo(host, ports[0], 0, socket.SOCK_STREAM)[0][-1][0]
         info("Resolved: {} -> {}".format(host, ip))
     except Exception as e:
         error("Cannot resolve '{}': {}".format(host, e))
         return
 
-    addr = ai[0][-1]
     sent = received = total_ms = 0
+    locked = None          # after the first packet, probe only this port (bounds time)
 
     for i in range(count):
-        s = socket.socket()
-        try:
-            s.settimeout(3)
-        except Exception:
-            pass
-        t0 = utime.ticks_ms()
-        try:
-            s.connect(addr)
-            ms = utime.ticks_diff(utime.ticks_ms(), t0)
-            multi("  seq={} from {}  time={}ms".format(i + 1, ip, ms))
-            received += 1
-            total_ms += ms
-        except OSError:
-            multi("  seq={}  Request timeout".format(i + 1))
-        finally:
+        if _aborted():
+            multi("  ^C  (stopped)")
+            break
+
+        probe = (locked,) if locked else ports
+        answered = refused = False
+        used = probe[0]
+        ms = 0
+        for p in probe:
             try:
-                s.close()
+                addr = socket.getaddrinfo(ip, p, 0, socket.SOCK_STREAM)[0][-1]
+            except Exception:
+                continue
+            s = socket.socket()
+            try:
+                s.settimeout(2)
             except Exception:
                 pass
+            t0 = utime.ticks_ms()
+            try:
+                s.connect(addr)
+                ms = utime.ticks_diff(utime.ticks_ms(), t0)
+                answered = True
+                used = p
+                break
+            except OSError as oe:
+                if _is_refused(oe):
+                    ms = utime.ticks_diff(utime.ticks_ms(), t0)
+                    refused = True
+                    used = p
+                    break
+            finally:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
         sent += 1
+        if answered:
+            received += 1
+            total_ms += ms
+            multi("  seq={} from {}:{}  time={}ms".format(i + 1, ip, used, ms))
+        elif refused:
+            received += 1
+            total_ms += ms
+            multi("  seq={} from {}:{}  time={}ms  (port closed, host up)".format(i + 1, ip, used, ms))
+        else:
+            multi("  seq={}  Request timeout".format(i + 1))
+
+        # Lock to one port after the first packet — the one that answered, or the
+        # primary candidate if none did — so packets 2..n don't re-probe the list.
+        if locked is None:
+            locked = used
+
         if i < count - 1:
             utime.sleep_ms(500)
 

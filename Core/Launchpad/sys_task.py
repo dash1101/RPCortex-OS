@@ -432,8 +432,8 @@ def _svc_list():
         multi("  {:>2}. {}".format(i + 1, c))
     multi("")
     import regedit
-    if (regedit.read('Settings.Async_Shell') or 'false') != 'true':
-        warn("  Async shell is OFF — services only run there. Enable:  asyncmode on")
+    if (regedit.read('Settings.Async_Shell') or 'true') != 'true':
+        warn("  Classic shell is on — services run in the multitasking shell. Enable:  asyncmode on")
 
 
 def _svc_add(cmd):
@@ -448,8 +448,8 @@ def _svc_add(cmd):
     if _svc_write(items):
         ok("Added service: {}".format(cmd))
         import regedit
-        if (regedit.read('Settings.Async_Shell') or 'false') != 'true':
-            info("It runs in the async shell — enable it:  asyncmode on")
+        if (regedit.read('Settings.Async_Shell') or 'true') != 'true':
+            info("It runs in the multitasking shell — re-enable it:  asyncmode on")
         else:
             info("It starts at your next login. Or start it now:  {}".format(cmd))
 
@@ -482,6 +482,52 @@ def _svc_clear():
         ok("Cleared {} service(s).".format(len(items)))
 
 
+def _svc_test(arg):
+    """Async-loop self-test: a zero-output background service bumps a counter
+    every ~250 ms. If the count climbs over a window (idle prompt OR while an app
+    like sysmon is open), the multitasking loop is genuinely interleaving
+    background services with the foreground — the v1.0 promise, proven live.
+
+      service test start   start the heartbeat (resets the counter)
+      service test         report beats + elapsed window
+      service test stop    stop the heartbeat
+    """
+    lp = sys.modules.get('Core.launchpad') or sys.modules.get('launchpad')
+    if lp is None or not hasattr(lp, 'start_selftest'):
+        error("Self-test needs the shell engine.")
+        return
+    import regedit
+    a = (arg or '').lower()
+    if a in ('start', 'on', 'begin'):
+        if (regedit.read('Settings.Async_Shell') or 'true') != 'true':
+            warn("Classic shell is on — the self-test only ticks in the multitasking shell.")
+            info("Enable it:  asyncmode on")
+            return
+        lp.start_selftest()
+        ok("Heartbeat started (250 ms).")
+        info("Let the prompt sit idle a few seconds, or open sysmon, then:  service test")
+        return
+    if a in ('stop', 'off', 'end'):
+        lp.stop_selftest()
+        ok("Heartbeat stopped.")
+        return
+    # report
+    r = lp.selftest_report()
+    if r['beats'] == 0 and not r['live']:
+        info("Self-test not running.  Start it:  service test start")
+        return
+    span = r['span_ms']
+    rate = (r['beats'] * 1000.0 / span) if span > 0 else 0.0
+    multi("  beats   : {}".format(r['beats']))
+    multi("  window  : {} ms".format(span))
+    multi("  rate    : {:.1f} beats/sec  (interval {} ms)".format(rate, r['interval']))
+    multi("  live    : {}".format("yes" if r['live'] else "no"))
+    if r['beats'] > 1 and rate > 1.0:
+        ok("Loop is scheduling background services concurrently.")
+    elif r['live']:
+        warn("Counter not advancing — the loop looks blocked (sync command/app?).")
+
+
 def service(args=None):
     """Manage background services (run in the async shell). See 'service list'."""
     if not args or not args.strip():
@@ -501,13 +547,16 @@ def service(args=None):
         _svc_remove(rest)
     elif sub == 'clear':
         _svc_clear()
+    elif sub == 'test':
+        _svc_test(rest)
     elif sub in ('help', '-h', '--help', '?'):
-        info("service - manage background services (async shell, v0.9.5)")
+        info("service - manage background services (multitasking shell, v1.0)")
         multi("  service                 list running services + auto-start list")
         multi("  service add <command>   add an auto-start command (services.cfg)")
         multi("  service remove <n>      remove line <n>")
         multi("  service clear           empty the list")
-        multi("  Services run in the async shell. Enable it:  asyncmode on")
+        multi("  service test [start|stop]  async-loop self-test (see below)")
+        multi("  Services run in the multitasking shell (the v1.0 default).")
         multi("  Example:  service add \"httpd start --bg\"")
     else:
         error("Unknown subcommand '{}'.".format(sub))
@@ -550,33 +599,31 @@ def autonomy(args=None):
 
 
 def asyncmode(args=None):
-    """Toggle the EXPERIMENTAL asyncio shell (v0.9.5 multitasking foundation).
+    """Switch between the v1.0 multitasking shell and the classic synchronous shell.
 
     asyncmode status | on | off
 
-    When ON, the next login runs an async shell where background scheduled tasks
-    fire even while you type — the groundwork for v1.0 concurrency. It's
-    experimental: editing is basic (no history/cursor-nav/completion yet) and a
-    long command still blocks the loop. A crash sentinel falls back to the normal
-    shell automatically, so it can't lock you out. Most users want the standard
-    shell + 'task background on' instead."""
+    The multitasking (async) shell is the DEFAULT in v1.0: background services and
+    scheduled tasks keep running while you work, and the line editor has full
+    history / Tab completion / cursor + word navigation. 'asyncmode off' reverts to
+    the classic synchronous shell (also the automatic recovery / crash fallback).
+    Applies at the next login. A crash sentinel falls back to the classic shell
+    automatically, so async can never lock you out."""
     import regedit
     sub = (args or '').strip().lower()
-    cur = (regedit.read('Settings.Async_Shell') or 'false') == 'true'
+    cur = (regedit.read('Settings.Async_Shell') or 'true') == 'true'
     if sub in ('', 'status'):
-        info("Async shell (experimental): {}".format("ON" if cur else "OFF"))
+        info("Multitasking (async) shell: {}".format("ON (default)" if cur else "OFF"))
         if cur:
-            multi("  Next login uses the asyncio shell. Disable:  asyncmode off")
+            multi("  Background services run while you work. Classic shell:  asyncmode off")
         else:
-            multi("  Standard shell in use. For background tasks try:  task background on")
-            multi("  Enable the experimental async shell:  asyncmode on")
+            multi("  Using the classic synchronous shell. Re-enable:  asyncmode on")
         return
     if sub in ('on', 'enable', 'true', '1'):
         regedit.save('Settings.Async_Shell', 'true')
-        ok("Async shell ENABLED (experimental). Applies at the next login/reboot.")
-        warn("Editing is basic here; the standard shell stays the safe default.")
+        ok("Multitasking shell enabled (the v1.0 default). Applies at the next login.")
     elif sub in ('off', 'disable', 'false', '0'):
         regedit.save('Settings.Async_Shell', 'false')
-        ok("Async shell disabled — back to the standard shell at next login.")
+        ok("Switched to the classic synchronous shell at the next login.")
     else:
         warn("Usage: asyncmode status | on | off")

@@ -17,6 +17,24 @@ import regedit
 from RPCortex import warn, error, info, ok, multi, inpt
 
 
+def _reboot(kind='reset'):
+    """Reboot through the live shell engine so it's async-safe.
+
+    A direct machine.reset()/soft_reset() called while the asyncio event loop is
+    running drops to the bare REPL on the rp2 port instead of rebooting, so the
+    engine routes the reset through sync context (launchpad.reboot_now). Falls
+    back to a direct reset only if the engine isn't reachable. `kind` is 'reset'
+    (hard) or 'soft_reset'."""
+    _lp = sys.modules.get('Core.launchpad') or sys.modules.get('launchpad')
+    if _lp is not None and hasattr(_lp, 'reboot_now'):
+        _lp.reboot_now(kind)
+        return
+    if kind == 'soft_reset':
+        machine.soft_reset()
+    else:
+        machine.reset()
+
+
 # NOTE: reboot / sreboot / freeup below are shadowed at dispatch time by the
 # inline versions in launchpad._CRITICAL (_crit_reboot / _crit_sreboot /
 # _crit_freeup), which are reached FIRST so they still work when the heap is too
@@ -33,7 +51,7 @@ def reboot(args=None):
         regedit.save("Settings.Startup", "0")  # clean shutdown
     except Exception:
         pass
-    machine.reset()
+    _reboot('reset')
 
 
 def sreboot(args=None):
@@ -44,7 +62,7 @@ def sreboot(args=None):
         regedit.save("Settings.Startup", "0")  # clean shutdown
     except Exception:
         pass
-    machine.soft_reset()
+    _reboot('soft_reset')
 
 
 def uptime(args=None):
@@ -541,10 +559,9 @@ def factoryreset(args=None):
 
     # --- 6. Reboot -------------------------------------------------------
     ok("Factory reset complete. Rebooting...", p="Reset")
-    import machine as _m
     from RPCortex import close_session_log
     close_session_log()
-    _m.reset()
+    _reboot('reset')
 
 
 # ---------------------------------------------------------------------------
@@ -590,8 +607,6 @@ def _full_reinstall(rpc_src=None, online=False):
     With neither, it wipes only and you restore via the Web Installer.
     Exposed through `update reinstall [online | <path.rpc>]`.
     """
-    import machine as _m
-
     warn("=" * 60, p="Wipe")
     warn("FULL SYSTEM WIPE  —  ALL DATA WILL BE DELETED", p="Wipe")
     warn("=" * 60, p="Wipe")
@@ -694,7 +709,7 @@ def _full_reinstall(rpc_src=None, online=False):
     ok("Wipe complete. Rebooting in 3 seconds...", p="Wipe")
     import utime
     utime.sleep(3)
-    _m.reset()
+    _reboot('reset')
 
 
 # ---------------------------------------------------------------------------
@@ -1010,11 +1025,10 @@ def _update_from_file(archive_path, new_build=None):
     info("Rebooting in 3 seconds to apply the update...", p="Update")
 
     import utime
-    import machine as _m
     from RPCortex import close_session_log
     utime.sleep(3)
     close_session_log()
-    _m.reset()
+    _reboot('reset')
 
 
 def _update_help():

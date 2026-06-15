@@ -1,11 +1,8 @@
-# Desc: Entry point for RPCortex - Pulsar OS
+# Desc: Entry point for RPCortex - Vela OS
 # File: /main.py
-# Last Updated: 6/10/2026
+# Last Updated: 6/15/2026
 # Lang: MicroPython, English
-# Version: v0.9.1
 # Author: dash1101
-
-# RPC β9
 
 # Put /Core on the import path up front so every module — boot-time (post,
 # initialization) AND the shell — imports the SAME `regedit` (one cache).
@@ -15,8 +12,15 @@ import sys as _sys
 if '/Core' not in _sys.path:
     _sys.path.append('/Core')
 
-VERSION = "β9"
-CODENAME = "Pulsar"
+# Boot-splash version/codename, pulled from RPCortex.py (the single source of
+# truth that build.py and the boot-time registry sync use) so the splash can
+# never drift from the real OS_VERSION again; falls back to a literal otherwise.
+try:
+    from RPCortex import OS_VERSION as VERSION, OS_CODENAME as _CN
+    CODENAME = _CN[9:] if _CN.startswith("RPCortex ") else _CN
+except Exception:
+    VERSION = "v1.0.0"
+    CODENAME = "Vela"
 
 _R = "\033[0m"
 
