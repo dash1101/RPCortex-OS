@@ -81,7 +81,7 @@ def sysinfo(args=None):
     _owner = regedit.read('System.Owner')
     if _owner:
         multi("  Owner       : {}".format(_owner))
-    multi("  Device ID   : {}".format(regedit.read('System.Device_ID') or 'pulsar'))
+    multi("  Device ID   : {}".format(regedit.read('System.Device_ID') or 'vela'))
     multi("  Active User : {}".format(regedit.read('Settings.Active_User') or 'Unknown'))
     multi("  Platform    : {}".format(sys.platform))
     multi("  MicroPython : {}".format(sys.version))

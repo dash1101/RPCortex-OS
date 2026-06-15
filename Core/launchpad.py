@@ -158,7 +158,7 @@ def _load_lp(path):
 _cmd_cache   = {}               # file_path -> module or scope dict
 _history     = []               # command history (most recent last)
 _HIST_MAX    = 50
-_shell_state = {'running': False, 'home': '/', 'host': 'pulsar', 'stdin': None}  # mutable; cached scopes hold a reference
+_shell_state = {'running': False, 'home': '/', 'host': 'vela', 'stdin': None}  # mutable; cached scopes hold a reference
 _aliases     = {}               # name -> expanded command string (persisted to aliases.cfg)
 _ALIAS_CFG   = '/Pulsar/Registry/aliases.cfg'
 _STARTUP_CFG = '/Pulsar/Registry/startup.cfg'   # commands run once at shell start
@@ -1917,7 +1917,7 @@ _BLUE = '\033[94m'
 def _prompt(username):
     cwd  = uos.getcwd()
     home = _shell_state.get('home', '').rstrip('/')
-    host = _shell_state.get('host', 'pulsar')
+    host = _shell_state.get('host', 'vela')
     if home and (cwd == home or cwd.startswith(home + '/')):
         display = '~' + cwd[len(home):]
     else:
@@ -1964,9 +1964,9 @@ def launchpad_init(username, password, auth=True):
     _shell_state['home'] = home
     # Hostname shown in the prompt — configurable via 'reg set System.Device_ID'
     try:
-        _shell_state['host'] = regedit.read('System.Device_ID') or 'pulsar'
+        _shell_state['host'] = regedit.read('System.Device_ID') or 'vela'
     except Exception:
-        _shell_state['host'] = 'pulsar'
+        _shell_state['host'] = 'vela'
     # Idle-logout is enabled for authenticated sessions; the actual timeout
     # (Settings.Idle_Logout, minutes) is read live in _shell_input so it can be
     # changed from the `settings` app without re-logging in.

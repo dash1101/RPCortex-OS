@@ -22,7 +22,7 @@ Clockable: false
 Codename: RPCortex B9 - Pulsar
 Build: source
 Stage: dev
-Device_ID: pulsar
+Device_ID: vela
 Owner:
 TZ_Offset: 0
 State: 0

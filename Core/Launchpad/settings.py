@@ -209,7 +209,7 @@ def _row_for(key):
     if key == 't':
         return _value_row('t', 'Timezone Offset',  _rget('System.TZ_Offset', '0'), 'hrs from UTC')
     if key == 'd':
-        return _value_row('d', 'Device ID',        _rget('System.Device_ID', 'pulsar'), 'hostname')
+        return _value_row('d', 'Device ID',        _rget('System.Device_ID', 'vela'), 'hostname')
     if key == 'i':
         return _value_row('i', 'Idle Logout',      _rget('Settings.Idle_Logout', '0'), _idle_note())
     return ''
