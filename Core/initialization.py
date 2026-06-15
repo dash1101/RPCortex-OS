@@ -107,9 +107,9 @@ def setup_seq():
     # --- Step 3: Device name (hostname) -------------------------------------
     info("[3/6] Device name")
     multi("  Optional - appears in the shell prompt:  user@<name>")
-    multi("  Leave blank to keep the default 'pulsar'.")
+    multi("  Leave blank to keep the default 'vela'.")
     multi("")
-    devid = inpt("  Device name [pulsar]").strip()
+    devid = inpt("  Device name [vela]").strip()
     if devid:
         devid = devid.split()[0]   # keep it shell-safe: one token, no spaces
         try:
@@ -118,7 +118,7 @@ def setup_seq():
         except Exception:
             pass
     else:
-        ok("  Keeping 'pulsar'.  Change later: reg set System.Device_ID <name>")
+        ok("  Keeping 'vela'.  Change later: reg set System.Device_ID <name>")
     multi("")
 
     # --- Step 4: WiFi --------------------------------------------------------

@@ -14,7 +14,7 @@
 ::
 :: Notes:
 ::   Run compile.bat first if deploying --compiled.
-::   \Nebula\ and \Users\ on the device are never touched -- user data is safe.
+::   \Pulsar\ and \Users\ on the device are never touched -- user data is safe.
 
 setlocal enabledelayedexpansion
 
@@ -97,11 +97,11 @@ set "MPR=mpremote %PORT_ARG%"
 :: speedup. It also copies ALL package dirs (PicoFetch, RPCMark, NTP, ...),
 :: which the per-file version missed.
 ::
-:: Only Core\, Packages\, and main.py are touched -- \Nebula\ and \Users\
+:: Only Core\, Packages\, and main.py are touched -- \Pulsar\ and \Users\
 :: (user accounts, WiFi, settings) are never sent, so they're left intact.
 :: ---------------------------------------------------------------------------
 echo   -- Copying OS in one session: Core\, Packages\, main.py --
-echo      (user data under \Nebula\ and \Users\ is left untouched)
+echo      (user data under \Pulsar\ and \Users\ is left untouched)
 echo.
 
 %MPR% cp -r "%SRC_DIR%\Core" : + cp -r "%SRC_DIR%\Packages" : + cp "%SRC_DIR%\main.py" :
