@@ -31,7 +31,7 @@ Commands:
 
 Notes:
   - os-update / os-update-online use the device's own ZIP extractor
-    (rpc_install), which preserves /Users and /Pulsar (accounts, settings,
+    (rpc_install), which preserves /Users and /Vela (accounts, settings,
     WiFi, packages). The device reboots when done.
   - Close PuTTY/Thonny before running - only one program can own the port.
 """
@@ -342,7 +342,7 @@ def cmd_os_update(dev, rpcfile):
     if not os.path.isfile(rpcfile):
         raise DeviceError("No such .rpc file: " + rpcfile)
     cmd_push(dev, rpcfile, '/update.rpc')
-    print("[:] Applying update on device (preserving /Users and /Pulsar)...")
+    print("[:] Applying update on device (preserving /Users and /Vela)...")
     out = dev.exec_("import sys\n"
                     "if '/Core' not in sys.path: sys.path.append('/Core')\n"
                     "import rpc_install\n"
