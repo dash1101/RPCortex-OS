@@ -170,27 +170,20 @@ def _get_uptime():
 
 
 def _get_temp():
-    """Read the RP2040 / RP2350 onboard temperature sensor."""
+    """Onboard die temperature, portable across RP2 (ADC4) and ESP32-S3 (esp32
+    module) via Core/hwinfo. Falls back to 'Not available' on a board with no
+    readable sensor — NEVER the RP2 formula on a non-RP2 board."""
     try:
-        m = getattr(sys.implementation, '_machine', '') or ''
-        if 'RP2350' in m.upper():
-            # RP2350 — ADC channel 4 same formula (approximate)
-            from machine import ADC
-            sensor  = ADC(4)
-            raw     = sensor.read_u16()
-            voltage = raw * 3.3 / 65535
-            temp_c  = 27.0 - (voltage - 0.706) / 0.001721
-            return '{:.1f} °C  (onboard)'.format(temp_c)
-        else:
-            # RP2040
-            from machine import ADC
-            sensor  = ADC(4)
-            raw     = sensor.read_u16()
-            voltage = raw * 3.3 / 65535
-            temp_c  = 27.0 - (voltage - 0.706) / 0.001721
-            return '{:.1f} °C  (onboard)'.format(temp_c)
+        import sys as _sys
+        if '/Core' not in _sys.path:
+            _sys.path.append('/Core')
+        import hwinfo
+        t = hwinfo.cpu_temp_c()
+        if t is not None:
+            return '{:.1f} °C  (onboard)'.format(t)
     except Exception:
-        return 'Not available'
+        pass
+    return 'Not available'
 
 
 def _get_uid():

@@ -3,6 +3,7 @@
 # Format: command_name:/path/to/file.py:function_name
 fscheck:/Core/Launchpad/sys_recovery.py:fscheck
 diag:/Core/Launchpad/sys_recovery.py:diag
+compat:/Core/Launchpad/sys_recovery.py:compat
 logdump:/Core/Launchpad/sys_recovery.py:logdump
 regreset:/Core/Launchpad/sys_recovery.py:regreset
 pkgdisable:/Core/Launchpad/sys_recovery.py:pkgdisable

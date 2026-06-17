@@ -1126,7 +1126,12 @@ def _apply_dyn_clock(active):
         if _set_clock_from(('Hardware.Boot_Clock', 'Hardware.Max_Clock')):
             _DYN_STATE[0] = 'active'
     else:
-        if _set_clock_from(('Hardware.Min_Clock',), floor=_DYN_FLOOR_MHZ):
+        try:
+            import hwinfo
+            _floor = hwinfo.dyn_floor_mhz()     # platform-aware (RP2 60, ESP32 80)
+        except Exception:
+            _floor = _DYN_FLOOR_MHZ
+        if _set_clock_from(('Hardware.Min_Clock',), floor=_floor):
             _DYN_STATE[0] = 'idle'
 
 
@@ -1701,6 +1706,18 @@ def _enter_async_shell(username):
         import asyncio
     except ImportError:
         warn("asyncio isn't available on this build — using the standard shell.")
+        return False
+    # Stability guard (portability): the async reader polls stdin with select().
+    # On a port whose stdin isn't selectable (some USB-CDC stacks differ — the
+    # ESP32-S3 native-USB question), the async shell would sit dead at the prompt.
+    # Probe once; if it raises, fall back to the proven sync shell instead of
+    # silently breaking. (`compat` reports this same check.)
+    try:
+        import select as _sel
+        _sel.select([sys.stdin], [], [], 0)
+    except Exception as _e:
+        warn("Async shell unavailable here (stdin not pollable: {}).".format(_e))
+        info("Using the standard shell. Run 'compat' for a full report.")
         return False
     info("Multitasking shell — background services keep running while you work.", p="Launchpad")
     global _async_active, _reboot_request

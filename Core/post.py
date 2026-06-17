@@ -209,24 +209,27 @@ def check_oc():
     """
     One-time clock calibration — runs only when Hardware.Clockable != 'true'.
     Sets Settings.Startup to 6 as a crash sentinel; clears it on success.
-    For RP2040/RP2350, uses known-safe limits without probing.
-    For other platforms, applies the limits directly via pulse.set_clock().
+    Records platform-safe Min/Max clock limits from hwinfo (RP2040/RP2350 80-220,
+    ESP32-S3 80-240) WITHOUT probing — no invalid machine.freq() call, so it can't
+    abort on the ESP32-S3. The running clock isn't changed here; OC_On_Boot applies
+    Max_Clock later via _apply_boot_clock() only if enabled.
     """
     try:
         regedit.save("Settings.Startup", "6")
         regedit.save("Hardware.Clockable", "false")
         core.info("Calibrating clock range...", p="POST")
 
-        _plat = sys.platform.lower()
-        if 'rp2' in _plat:
-            # RP2040/RP2350 — known-safe limits, no probing needed.
-            # Min is 80 MHz: lower clocks (e.g. 30) destabilise flash/peripheral
-            # timing and freeze the device — also the dynamic-clock idle floor.
-            minoc = "80.0MHz"
-            maxoc = "220.0MHz"
-        else:
-            minoc = pulse.set_clock(80, verbose=False)
-            maxoc = pulse.set_clock(250, verbose=False)
+        # Platform-aware safe limits (RP2040/RP2350: 80-220, ESP32-S3: 80-240).
+        # hwinfo is the single source so we never probe an invalid frequency —
+        # the old non-RP2 path probed 250 MHz, which is INVALID on the ESP32-S3
+        # (240 ceiling) and aborted calibration on every boot.
+        try:
+            import hwinfo
+            _lo, _hi = hwinfo.clock_range_mhz()
+        except Exception:
+            _lo, _hi = (80, 220)
+        minoc = "{:.1f}MHz".format(_lo)
+        maxoc = "{:.1f}MHz".format(_hi)
 
         regedit.save("Hardware.Min_Clock", minoc)
         regedit.save("Hardware.Max_Clock", maxoc)

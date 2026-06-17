@@ -116,6 +116,173 @@ def diag(args=None):
     multi("  Platform    : {}".format(sys.platform))
 
 
+def _cstat(label, status, detail=''):
+    """Print one compatibility-check row. status in OK/WARN/FAIL/NA."""
+    col = {'OK': '92', 'WARN': '93', 'FAIL': '91', 'NA': '90'}.get(status, '90')
+    pad = status + ' ' * (4 - len(status))
+    multi("  \033[{}m{}\033[0m {:<13}{}".format(col, pad, label, detail))
+
+
+def compat(args=None):
+    """Platform compatibility self-test — PROBES the runtime features the OS
+    depends on (not just 'can I import it') and reports OK/WARN/FAIL/NA per
+    subsystem. Run it on a new board (e.g. ESP32-S3) to verify the multitasking
+    OS will actually work there. Every probe is isolated, so it never crashes.
+    `compat -q` skips the interactive keypress test."""
+    import gc
+    info("=== RPCortex compatibility self-test ===")
+    multi("  Platform : {}   MicroPython {}".format(sys.platform, sys.version))
+    multi("")
+
+    # CPU clock (read)
+    try:
+        import machine
+        f = machine.freq()
+        if isinstance(f, tuple):
+            f = f[0]
+        _cstat('cpu clock', 'OK', '{} MHz'.format(f // 1_000_000))
+    except Exception as e:
+        _cstat('cpu clock', 'FAIL', str(e))
+
+    # CPU clock (set-to-current — proves machine.freq(set) works, no speed change)
+    try:
+        import machine
+        cur = machine.freq()
+        if isinstance(cur, tuple):
+            cur = cur[0]
+        machine.freq(cur)
+        _cstat('freq set', 'OK', 'settable')
+    except Exception as e:
+        _cstat('freq set', 'WARN', 'not settable ({})'.format(e))
+
+    # hwinfo: temp sensor + platform clock range
+    try:
+        import hwinfo
+        lo, hi = hwinfo.clock_range_mhz()
+        _cstat('clock range', 'OK', '{}-{} MHz'.format(lo, hi))
+        t = hwinfo.cpu_temp_c()
+        if t is None:
+            _cstat('temp sensor', 'NA', 'no readable sensor on this platform')
+        else:
+            _cstat('temp sensor', 'OK', '{:.1f} C'.format(t))
+    except Exception as e:
+        _cstat('hwinfo', 'FAIL', str(e))
+
+    # RAM
+    try:
+        gc.collect()
+        _cstat('free RAM', 'OK', '{} KB'.format(gc.mem_free() // 1024))
+    except Exception as e:
+        _cstat('free RAM', 'FAIL', str(e))
+
+    # Filesystem write + read-back
+    try:
+        tp = '/Pulsar/.compat_test'
+        with open(tp, 'w') as f:
+            f.write('ok')
+        with open(tp) as f:
+            good = (f.read() == 'ok')
+        try:
+            uos.remove(tp)
+        except Exception:
+            pass
+        _cstat('fs write', 'OK' if good else 'WARN',
+               'write+read ok' if good else 'read-back mismatch')
+    except Exception as e:
+        _cstat('fs write', 'FAIL', str(e))
+
+    # RTC
+    try:
+        import machine
+        dt = machine.RTC().datetime()
+        _cstat('rtc', 'OK', '{}-{:02d}-{:02d}'.format(dt[0], dt[1], dt[2]))
+    except Exception as e:
+        _cstat('rtc', 'WARN', str(e))
+
+    # WiFi hardware
+    try:
+        import network
+        _cstat('wifi hw', 'OK' if hasattr(network, 'WLAN') else 'NA',
+               'network.WLAN present' if hasattr(network, 'WLAN') else 'no WLAN')
+    except Exception as e:
+        _cstat('wifi hw', 'NA', str(e))
+
+    # TLS (HTTPS / async wget)
+    try:
+        import ssl
+        _cstat('ssl/tls', 'OK', 'ssl')
+    except Exception:
+        try:
+            import ussl
+            _cstat('ssl/tls', 'OK', 'ussl')
+        except Exception as e:
+            _cstat('ssl/tls', 'WARN', 'no ssl — HTTPS unavailable ({})'.format(e))
+
+    # asyncio — the multitasking core. If the async shell is ALREADY running, that
+    # proves it works (and a nested asyncio.run() would error), so just report it.
+    try:
+        import asyncio
+        lp = sys.modules.get('Core.launchpad')
+        if lp is not None and getattr(lp, '_async_active', False):
+            _cstat('asyncio', 'OK', 'multitasking shell active (running on it now)')
+        else:
+            async def _tick():
+                await asyncio.sleep_ms(0)
+                return True
+            _cstat('asyncio', 'OK' if asyncio.run(_tick()) else 'WARN', 'event loop runs')
+    except Exception as e:
+        _cstat('asyncio', 'FAIL', str(e))
+
+    # select on stdin — the async reader's keystroke poll (the spottiest thing
+    # across ports; an ESP32-S3 native-USB difference would surface here).
+    try:
+        import select
+        select.select([sys.stdin], [], [], 0)
+        _cstat('select stdin', 'OK', 'pollable (non-blocking)')
+    except Exception as e:
+        _cstat('select stdin', 'FAIL', 'async shell will fall back to sync ({})'.format(e))
+
+    # kbd_intr — Ctrl+C-as-byte so the async loop survives Ctrl+C
+    try:
+        import micropython
+        _cstat('kbd_intr', 'OK' if hasattr(micropython, 'kbd_intr') else 'WARN',
+               'present' if hasattr(micropython, 'kbd_intr') else 'absent — Ctrl+C may tear the loop')
+    except Exception as e:
+        _cstat('kbd_intr', 'WARN', str(e))
+
+    # Interactive: actually deliver a keystroke through select (the real test).
+    interactive = not (args and ('-q' in args or 'quick' in args))
+    try:
+        import RPCortex as _rpc
+        if _rpc.is_capturing():
+            interactive = False
+    except Exception:
+        pass
+    if interactive:
+        multi("")
+        info("Press any key within 3s to test stdin delivery (or wait to skip)...")
+        try:
+            import select
+            import utime
+            t0 = utime.ticks_ms()
+            got = False
+            while utime.ticks_diff(utime.ticks_ms(), t0) < 3000:
+                if select.select([sys.stdin], [], [], 0)[0]:
+                    sys.stdin.read(1)
+                    got = True
+                    break
+                utime.sleep_ms(20)
+            _cstat('key delivery', 'OK' if got else 'WARN',
+                   'key received via select' if got else 'no key seen (skipped, or stdin not delivering)')
+        except Exception as e:
+            _cstat('key delivery', 'WARN', str(e))
+
+    multi("")
+    ok("Compatibility self-test complete.")
+    multi("  \033[90mFAIL on 'select stdin' or 'asyncio' => the async multitasking shell")
+    multi("  can't run here; 'asyncmode off' falls back to the proven sync shell.\033[0m")
+
+
 def logdump(args=None):
     """Print the current session log (optionally only the last n lines)."""
     n = None
