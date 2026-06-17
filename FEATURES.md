@@ -49,7 +49,7 @@ registries.
 - **Conditionals** — `&&` / `||` chaining backed by a real exit-status
   convention (`error()`/`fatal()` set the status flag).
 - **Persistent aliases** — `alias`/`unalias`, saved to
-  `/Pulsar/Registry/aliases.cfg`, survive reboot; critical built-ins can't be
+  `/Vela/Registry/aliases.cfg`, survive reboot; critical built-ins can't be
   shadowed.
 - **Tilde expansion** everywhere; case-insensitive `cd`.
 - **Idle auto-logout** — `Settings.Idle_Logout` (minutes); read live, no
@@ -94,9 +94,9 @@ actions (e.g. `pkg remove --force`).
 
 ### Automation (`sys_task.py`)
 - `startup list|add <cmd>|remove <n>|clear|run` — commands run once at login
-  (`/Pulsar/Registry/startup.cfg`).
+  (`/Vela/Registry/startup.cfg`).
 - `task list|add <secs> <cmd>|remove <n>|clear|run` — scheduled tasks on a
-  software-uptime timer (`/Pulsar/Registry/tasks.cfg`); `task run` is a
+  software-uptime timer (`/Vela/Registry/tasks.cfg`); `task run` is a
   responsive foreground scheduler (q / Ctrl+C).
 - `startup add task run` = headless autonomous mode.
 
@@ -119,7 +119,7 @@ condition.
 - CPU and memory checks; onboard temperature read (RP2040/RP2350).
 
 ## 5. Registry (`regedit.py`)
-- INI-style config at `/Pulsar/Registry/registry.cfg` with dot-notation API
+- INI-style config at `/Vela/Registry/registry.cfg` with dot-notation API
   (`reg get`/`reg set Section.Key`).
 - In-memory cache (parse once, write-through, invalidate on change).
 - Sections: `[Networks]`, `[Hardware]`, `[System]`, `[Settings]`, `[Features]`,
@@ -129,7 +129,7 @@ condition.
   `OS_CODENAME` at boot).
 
 ## 6. Users & security (`usrmgmt.py`)
-- CSV user store `/Pulsar/Registry/user.cfg`: `username, salt$sha256, /home/`.
+- CSV user store `/Vela/Registry/user.cfg`: `username, salt$sha256, /home/`.
 - **Salted SHA-256** hashing, unique per-user salt; backward-compatible with
   legacy bare-SHA256.
 - NOPASS marker for the guest account; per-user home directories.
@@ -137,7 +137,7 @@ condition.
 
 ## 7. Networking (`net.py`)
 - WiFi: detect, scan, connect, disconnect, unlimited saved networks
-  (`/Pulsar/Registry/networks.cfg`).
+  (`/Vela/Registry/networks.cfg`).
 - **`wifi autoconnect`** — scan saved networks and connect to the strongest;
   optional boot autoconnect (`Settings.Network_Autoconnect`).
 - HTTP client v2 — fully iterative redirect following, 15 s timeout, streamed
@@ -190,10 +190,10 @@ apt-style manager over a remote repo.
 
 ## 12. Storage layout
 ```
-/Pulsar/Registry/   registry.cfg, user.cfg, networks.cfg, aliases.cfg,
+/Vela/Registry/   registry.cfg, user.cfg, networks.cfg, aliases.cfg,
                     startup.cfg, tasks.cfg
-/Pulsar/Logs/       latest.log (rotated, batched flushing)
-/Pulsar/pkg/        repos.cfg, cache/
+/Vela/Logs/       latest.log (rotated, batched flushing)
+/Vela/pkg/        repos.cfg, cache/
 /Core/ /Packages/   OS + packages
 /Users/<name>/      per-user home directories
 ```
