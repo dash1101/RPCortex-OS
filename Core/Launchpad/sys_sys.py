@@ -946,11 +946,25 @@ def _update_from_file(archive_path, new_build=None):
     warn("OS UPDATE FROM FILE", p="Update")
     warn("=" * 54, p="Update")
     multi("  Archive : {}  ({} bytes)".format(archive_path, sz))
+    # Detect which storage path is currently in use — upgrading from v0.9.x means
+    # data is still at /Pulsar/; post.py migrates it to /Vela/ on the next boot.
+    try:
+        uos.stat('/Vela')
+        _storage = '/Vela'
+    except OSError:
+        try:
+            uos.stat('/Pulsar')
+            _storage = '/Pulsar'
+        except OSError:
+            _storage = '/Vela'
     multi("")
     multi("  OS files will be overwritten.  User data is preserved:")
     multi("    /Users/              (home directories)")
-    multi("    /Vela/Registry/      (registry + user accounts)")
-    multi("    /Vela/pkg/           (package cache + repos)")
+    multi("    {}/Registry/  (registry + user accounts)".format(_storage))
+    multi("    {}/pkg/        (package cache + repos)".format(_storage))
+    if _storage == '/Pulsar':
+        multi("")
+        multi("  Note: /Pulsar/ will be renamed to /Vela/ on next boot (v1.0 migration).")
     multi("")
     multi("  Tip: run 'freeup' first if you're on a Pico 1 with limited RAM.")
     multi("")
