@@ -19,7 +19,7 @@ Boot_Clock:
 Clockable: false
 
 [System]
-Codename: RPCortex B9 - Pulsar
+Codename: RPCortex Vela
 Build: source
 Stage: dev
 Device_ID: vela
@@ -31,7 +31,7 @@ Session: 0
 
 [Settings]
 Startup: 0
-Version: v0.9.1
+Version: v1.0.0
 Note: 0
 Active_User:
 Setup: false
@@ -41,6 +41,8 @@ Dynamic_Clock: false
 Verbose_Boot: false
 Idle_Logout: 0
 Autonomous: false
+Async_Shell: true
+Async_Booting: 0
 
 [Features]
 Program_Execution: true

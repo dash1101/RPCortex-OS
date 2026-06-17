@@ -91,7 +91,7 @@ def sysinfo(args=None):
     except OSError:
         free_flash = -1
 
-    info("=== RPCortex Pulsar — System Info ===")
+    info("=== RPCortex Vela — System Info ===")
     multi("  OS Version  : {}".format(regedit.read('Settings.Version') or 'Unknown'))
     multi("  Build       : {}  ({})".format(
         regedit.read('System.Build') or _os_build(),
@@ -228,7 +228,7 @@ def clear(args=None):
 
 def ver(args=None):
     ver_str  = regedit.read('Settings.Version') or 'Unknown'
-    codename = regedit.read('System.Codename')  or 'Pulsar'
+    codename = regedit.read('System.Codename')  or 'Vela'
     build    = regedit.read('System.Build') or _os_build()
     stage    = regedit.read('System.Stage') or _os_stage()
     multi("RPCortex {}  —  {}".format(ver_str, codename))
@@ -1191,7 +1191,7 @@ def which(args):
 
 def help(args=None):
     if not args:
-        info("=== RPCortex Pulsar — Launchpad ===")
+        info("=== RPCortex Vela — Launchpad ===")
         multi("  Filesystem : ls  cd  pwd  touch  mkdir  rm  read  head  tail  exec  rename  mv  cp  df  du  tree")
         multi("  Text       : grep  wc  find  sort  uniq  hex  basename  dirname")
         multi("  System     : sysinfo  meminfo  uptime  date  watch  ver  reboot  sreboot  rawrepl  recovery  sleep  which  clear  pulse  bench  fetch  edit  env  reg  freeup  settings")

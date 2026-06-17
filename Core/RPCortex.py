@@ -121,7 +121,7 @@ def init_session_log():
         _log_file = open(LATEST_LOG, 'w')
         t = time.localtime()
         _log_file.write(
-            "=== RPCortex Pulsar - Session Log ===\n"
+            "=== RPCortex Vela - Session Log ===\n"
             "Started : {}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}\n"
             "=====================================\n\n".format(
                 t[0], t[1], t[2], t[3], t[4], t[5]
@@ -201,8 +201,9 @@ def log(msg):
 
 def file_exists(filepath):
     try:
-        with open(filepath, 'r'):
-            return True
+        import uos
+        uos.stat(filepath)
+        return True
     except OSError:
         return False
 
