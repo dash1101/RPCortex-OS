@@ -1,4 +1,4 @@
-# Desc: Recovery & diagnostic shell commands - RPCortex Pulsar OS
+# Desc: Recovery & diagnostic shell commands - RPCortex Vela OS
 # File: /Core/Launchpad/sys_recovery.py
 # Last Updated: 6/10/2026
 # Lang: MicroPython, English
@@ -45,12 +45,12 @@ _MANIFEST = (
     '/Core/Launchpad/sys_net.py',
     '/Core/Launchpad/sys_user.py',
     '/Core/Launchpad/sys_text.py',
-    '/Pulsar/Registry/registry.cfg',
-    '/Pulsar/Registry/user.cfg',
+    '/Vela/Registry/registry.cfg',
+    '/Vela/Registry/user.cfg',
 )
 
-_REGISTRY = '/Pulsar/Registry/registry.cfg'
-_LOG      = '/Pulsar/Logs/latest.log'
+_REGISTRY = '/Vela/Registry/registry.cfg'
+_LOG      = '/Vela/Logs/latest.log'
 
 
 def _stat_any(path):
@@ -180,7 +180,7 @@ def compat(args=None):
 
     # Filesystem write + read-back
     try:
-        tp = '/Pulsar/.compat_test'
+        tp = '/Vela/.compat_test'
         with open(tp, 'w') as f:
             f.write('ok')
         with open(tp) as f:

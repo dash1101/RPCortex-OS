@@ -1,4 +1,4 @@
-# Desc: Launchpad CLI shell engine for RPCortex - Pulsar OS
+# Desc: Launchpad CLI shell engine for RPCortex - Vela OS
 # File: /Core/launchpad.py
 # Last Updated: 6/10/2026
 # Lang: MicroPython, English
@@ -159,11 +159,11 @@ def _load_lp(path):
 _cmd_cache   = {}               # file_path -> module or scope dict
 _history     = []               # command history (most recent last)
 _HIST_MAX    = 50
-_HIST_FILE   = '/Pulsar/Registry/history'   # history persisted across reboots
+_HIST_FILE   = '/Vela/Registry/history'   # history persisted across reboots
 _shell_state = {'running': False, 'home': '/', 'host': 'vela', 'stdin': None}  # mutable; cached scopes hold a reference
 _aliases     = {}               # name -> expanded command string (persisted to aliases.cfg)
-_ALIAS_CFG   = '/Pulsar/Registry/aliases.cfg'
-_STARTUP_CFG = '/Pulsar/Registry/startup.cfg'   # commands run once at shell start
+_ALIAS_CFG   = '/Vela/Registry/aliases.cfg'
+_STARTUP_CFG = '/Vela/Registry/startup.cfg'   # commands run once at shell start
 
 
 def _load_history():
@@ -1138,7 +1138,7 @@ def _apply_dyn_clock(active):
 # ===========================================================================
 # Multitasking (v0.9.5)
 #
-# Two cooperative paths, both reading /Pulsar/Registry/tasks.cfg:
+# Two cooperative paths, both reading /Vela/Registry/tasks.cfg:
 #
 #   Track A — idle background scheduler (default-available, low risk):
 #     The sync shell already polls stdin in slices while the user is idle at an
@@ -1157,7 +1157,7 @@ def _apply_dyn_clock(active):
 # true background networking waits for the v1.0 async-socket work.
 # ===========================================================================
 
-_TASKS_CFG = '/Pulsar/Registry/tasks.cfg'
+_TASKS_CFG = '/Vela/Registry/tasks.cfg'
 _bg_due = None    # list of [next_due_ms, interval_ms, cmd]; None = not loaded
 _bg_sig = None    # raw tasks.cfg text we built _bg_due from (detects edits)
 
@@ -1269,7 +1269,7 @@ def _run_due_tasks(restore=''):
 # loop is idle-waiting; a long synchronous command (or synchronous net.py)
 # blocks it until that command returns. True preemptive background work is v1.0.
 
-_SERVICES_CFG = '/Pulsar/Registry/services.cfg'
+_SERVICES_CFG = '/Vela/Registry/services.cfg'
 _desired_services = {}    # name -> factory (zero-arg -> fresh coroutine)
 _service_tasks = {}       # name -> asyncio.Task (live, tied to the current loop)
 _async_active = False     # True while the asyncio supervisor's loop is running

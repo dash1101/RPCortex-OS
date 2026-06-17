@@ -1,4 +1,4 @@
-# Desc: CLI settings panel for RPCortex - Pulsar OS
+# Desc: CLI settings panel for RPCortex - Vela OS
 # File: /Core/Launchpad/settings.py
 # Last Updated: 6/11/2026
 # Lang: MicroPython, English

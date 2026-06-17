@@ -1,4 +1,4 @@
-# Desc: User management — accounts, passwords, authentication for RPCortex - Pulsar OS
+# Desc: User management — accounts, passwords, authentication for RPCortex - Vela OS
 # File: /Core/usrmgmt.py
 # Last Updated: 6/12/2026
 # Lang: MicroPython, English
@@ -20,7 +20,7 @@
 import hashlib
 import os
 
-_CFG = "/Pulsar/Registry/user.cfg"
+_CFG = "/Vela/Registry/user.cfg"
 
 # ---------------------------------------------------------------------------
 # Helpers

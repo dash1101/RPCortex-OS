@@ -1,4 +1,4 @@
-# Desc: Network shell commands (wget, curl, runurl, ping, nslookup) - RPCortex Pulsar OS
+# Desc: Network shell commands (wget, curl, runurl, ping, nslookup) - RPCortex Vela OS
 # File: /Core/Launchpad/sys_net.py
 # Last Updated: 6/10/2026
 # Lang: MicroPython, English

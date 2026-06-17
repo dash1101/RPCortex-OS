@@ -1,4 +1,4 @@
-# Desc: Power-On Self Test (POST) for RPCortex - Pulsar OS
+# Desc: Power-On Self Test (POST) for RPCortex - Vela OS
 # File: /Core/post.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English
@@ -117,7 +117,7 @@ def check_registry():
         core.fatal("PLEASE REINSTALL RPCORTEX!")
         return False
 
-    # Migrate /Nebula/ -> /Pulsar/ if updating from an older version
+    # Migrate /Nebula/ -> /Pulsar/ for devices upgrading from v0.8.x
     try:
         uos.stat("/Nebula")
         try:
@@ -128,26 +128,38 @@ def check_registry():
     except OSError:
         pass  # /Nebula doesn't exist — nothing to migrate
 
+    # Migrate /Pulsar/ -> /Vela/ for devices upgrading from v0.9.x
+    # This MUST run before the registry stat below (which now looks for /Vela/).
+    try:
+        uos.stat("/Pulsar")
+        try:
+            uos.stat("/Vela")
+        except OSError:
+            uos.rename("/Pulsar", "/Vela")
+            core.ok("Migrated /Pulsar/ -> /Vela/")
+    except OSError:
+        pass  # /Pulsar doesn't exist — nothing to migrate
+
     # Check/create the registry config file
     try:
-        uos.stat("/Pulsar/Registry/registry.cfg")
+        uos.stat("/Vela/Registry/registry.cfg")
         _vok("Registry found!")
     except OSError:
-        core.warn("File not found: '/Pulsar/Registry/registry.cfg'")
-        core.info("Creating /Pulsar/Registry/")
+        core.warn("File not found: '/Vela/Registry/registry.cfg'")
+        core.info("Creating /Vela/Registry/")
         try:
-            uos.mkdir("/Pulsar")
+            uos.mkdir("/Vela")
         except OSError:
             pass   # already exists — fine
         try:
-            uos.mkdir("/Pulsar/Registry")
+            uos.mkdir("/Vela/Registry")
             core.ok("Registry directory created")
         except OSError:
             pass   # already exists — fine
 
-        core.info("Building Registry '/Pulsar/Registry/registry.cfg'")
+        core.info("Building Registry '/Vela/Registry/registry.cfg'")
         try:
-            with open("/Pulsar/Registry/registry.cfg", "w") as f:
+            with open("/Vela/Registry/registry.cfg", "w") as f:
                 f.write(registry_content)
             core.ok("Registry created")
         except OSError as err:
@@ -279,12 +291,12 @@ def check_cores():
         core.error("Error checking CPU cores: {}".format(err))
 
 def _ensure_log_dir():
-    """Create /Pulsar/Logs/ on first boot if it doesn't exist."""
+    """Create /Vela/Logs/ on first boot if it doesn't exist."""
     try:
-        uos.stat("/Pulsar/Logs")
+        uos.stat("/Vela/Logs")
     except OSError:
         try:
-            uos.mkdir("/Pulsar/Logs")
+            uos.mkdir("/Vela/Logs")
         except OSError:
             pass  # non-fatal — log writes will just silently fail
 
@@ -303,7 +315,7 @@ def _warn_unexpected_shutdown():
     last_user = regedit.read("Settings.Active_User") or "unknown"
     core.info("Last active user : {}".format(last_user), p="POST")
 
-    log_path = "/Pulsar/Logs/latest.log"
+    log_path = "/Vela/Logs/latest.log"
     try:
         uos.stat(log_path)
         with open(log_path, "r") as f:
@@ -313,7 +325,7 @@ def _warn_unexpected_shutdown():
             tail = lines[-6:] if len(lines) >= 6 else lines
             for line in tail:
                 core.multi("    " + line.rstrip())
-        core.info("Full log: read /Pulsar/Logs/latest.log", p="POST")
+        core.info("Full log: read /Vela/Logs/latest.log", p="POST")
     except OSError:
         core.info("No previous log found.", p="POST")
 
@@ -333,7 +345,7 @@ def script():
     # Verbose-boot is read live by _vinfo/_vok from here on (the registry is
     # guaranteed to exist now).  Quiet boot shows only warnings/errors.
 
-    # Guarantee /Pulsar/Logs/ exists now that /Pulsar/ is confirmed.
+    # Guarantee /Vela/Logs/ exists now that /Vela/ is confirmed.
     _ensure_log_dir()
     gc.collect()
 
