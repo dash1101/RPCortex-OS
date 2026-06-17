@@ -93,6 +93,7 @@ def sysinfo(args=None):
 
     info("=== RPCortex Vela — System Info ===")
     multi("  OS Version  : {}".format(regedit.read('Settings.Version') or 'Unknown'))
+    multi("  Codename    : {}".format(regedit.read('System.Codename') or 'Vela'))
     multi("  Build       : {}  ({})".format(
         regedit.read('System.Build') or _os_build(),
         regedit.read('System.Stage') or _os_stage()))

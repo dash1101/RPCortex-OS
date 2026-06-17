@@ -111,11 +111,23 @@ def diag(args=None):
         multi("  Free flash  : unavailable")
     try:
         import regedit
-        ver = regedit.read('Settings.Version') or '?'
-        multi("  OS version  : {}".format(ver))
+        ver   = regedit.read('Settings.Version') or '?'
+        build = regedit.read('System.Build')     or 'source'
+        stage = regedit.read('System.Stage')     or 'dev'
+        multi("  OS version  : {} (build {} — {})".format(ver, build, stage))
         multi("  Registry    : \033[92mreadable\033[0m")
     except Exception as e:
         multi("  Registry    : \033[91mERROR\033[0m ({})".format(e))
+    # Storage path — confirm /Vela/ migrated correctly
+    try:
+        uos.stat('/Vela')
+        multi("  Storage     : \033[92m/Vela/ present\033[0m")
+    except OSError:
+        try:
+            uos.stat('/Pulsar')
+            multi("  Storage     : \033[93m/Pulsar/ (migration pending — reboot)\033[0m")
+        except OSError:
+            multi("  Storage     : \033[91mmissing (run fscheck)\033[0m")
     multi("  Platform    : {}".format(sys.platform))
 
 
