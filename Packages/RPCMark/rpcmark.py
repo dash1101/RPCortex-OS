@@ -1,4 +1,4 @@
-# Desc: RPCMark benchmark package for RPCortex - Pulsar OS
+# Desc: RPCMark benchmark package for RPCortex - Vela OS
 # File: /Packages/RPCMark/rpcmark.py
 # Last Updated: 6/11/2026
 # Lang: MicroPython, English
