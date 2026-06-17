@@ -10,7 +10,7 @@
 
 ---
 
-# RPCortex — Pulsar β9 — v0.9.1
+# RPCortex — Vela — v1.0.0
 
 RPCortex is a CLI operating system for the **Raspberry Pi Pico series** (RP2040 / RP2350) and the **ESP32-S3**, written entirely in **MicroPython**. It turns a microcontroller into something that actually behaves like a computer — a real interactive shell with pipes and scripting, user accounts with passwords, a package manager, WiFi, over-the-air updates, a text editor, task automation, and a structured boot process with hardware checks.
 
@@ -23,7 +23,7 @@ It runs on hardware with 264 KB of RAM. That constraint is the point.
 You flash MicroPython, copy the files, open PuTTY at 115200 baud, and reboot. POST runs — registry check, CPU test, memory verification, clock calibration, WiFi probe. You set a root password. You log in. The prompt comes up:
 
 ```
-root@pulsar:~>
+root@vela:~>
 ```
 
 From there you have a shell that works. `ls` shows your files with sizes and timestamps. `cd ~` takes you home. Up/down arrows scroll your last 50 commands. Left/right arrows move the cursor so you can edit a command mid-line. Tab completes commands and paths. You can pipe commands together (`cat log | grep ERROR | wc`), chain them (`wifi connect && pkg update`), and write scripts. You can open a file, edit it, save it. You can connect to WiFi, update the OS over the air, and install a package by name. You can overclock the CPU, benchmark it, drive GPIO pins, and check the temperature — all from the same prompt.
