@@ -113,4 +113,4 @@ Open source. Explicit credit to **[@dash1101](https://github.com/dash1101)** is 
 
 ---
 
-###### RPCortex Pulsar β9 — v0.9.1
+###### RPCortex Vela — v1.0.0
