@@ -544,11 +544,11 @@ class Editor:
 
     def _esc_recover(self):
         """ESC quit: if the buffer is modified, dump it to a .tmp recovery file
-        (next to the real file, or /Pulsar/editor_recovery.tmp for a scratch
+        (next to the real file, or /Vela/editor_recovery.tmp for a scratch
         buffer) so the work isn't lost — without overwriting the real file."""
         if not self.dirty:
             return
-        tmp = (self.filename + '.tmp') if self.filename else '/Pulsar/editor_recovery.tmp'
+        tmp = (self.filename + '.tmp') if self.filename else '/Vela/editor_recovery.tmp'
         try:
             with open(tmp, 'w') as f:
                 f.write('\n'.join(self.lines))

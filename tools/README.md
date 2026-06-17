@@ -23,18 +23,18 @@ python rpc_comm.py --port COM7 reg get System.Owner
 python rpc_comm.py --port COM7 reg set System.TZ_Offset -5
 python rpc_comm.py --port COM7 ls /Users/root
 python rpc_comm.py --port COM7 push notes.txt /Users/root/notes.txt
-python rpc_comm.py --port COM7 pull /Pulsar/Logs/latest.log latest.log
+python rpc_comm.py --port COM7 pull /Vela/Logs/latest.log latest.log
 python rpc_comm.py --port COM7 rm /Users/root/notes.txt
 python rpc_comm.py --port COM7 pkg-install dist/sysmon.pkg # local .pkg
 python rpc_comm.py --port COM7 pkg-online SysMon           # from the repo (WiFi)
-python rpc_comm.py --port COM7 os-update RPC-Pulsar-b9-Release.rpc
+python rpc_comm.py --port COM7 os-update RPC-Vela-v1.0-dev.rpc
 python rpc_comm.py --port COM7 os-update-online            # fetch latest + apply
 ```
 
 ### Notes
 - **Close PuTTY/Thonny first** — only one program can own the serial port.
 - `os-update` / `os-update-online` use the device's own `rpc_install` extractor,
-  which **preserves** `/Users` and `/Pulsar` (accounts, settings, WiFi, packages);
+  which **preserves** `/Users` and `/Vela` (accounts, settings, WiFi, packages);
   the device reboots when finished. For a clean wipe use the Web Installer's
   "Clean install" option instead.
 - `os-update-online` downloads the image **on this PC** (from
