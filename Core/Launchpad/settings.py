@@ -101,10 +101,10 @@ def _rtoggle(key):
 # ---------------------------------------------------------------------------
 
 def _get_temp():
+    # Portable across RP2 (ADC4) and ESP32-S3 (esp32 module) via hwinfo.
     try:
-        from machine import ADC
-        v = ADC(4).read_u16() * 3.3 / 65535
-        return '{:.1f}C'.format(27.0 - (v - 0.706) / 0.001721)
+        import hwinfo
+        return hwinfo.cpu_temp_str(default='?')
     except Exception:
         return '?'
 
