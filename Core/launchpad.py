@@ -1576,12 +1576,15 @@ async def _scheduler_coro():
 
 
 def _has_shell_ops(raw):
-    """True if the line uses shell operators (pipe / chain / redirect / multi),
-    in which case it can't be a single cooperative app and takes the sync path."""
-    for c in ('|', ';', '&', '>'):
-        if c in raw:
-            return True
-    return False
+    """True if the line uses a shell operator the async-dispatch gate must respect —
+    pipe '|', chain '&&'/'||', or sequence ';' — so it can't be a single cooperative
+    app and must take the sync pipeline path. Matches exactly what _parse_line /
+    _split_pipeline split on. A lone '&' or '>' is NOT an operator in this shell, so a
+    query-string URL like  wget http://h/f?a=1&b=2  still dispatches to the async path
+    ('||' is covered by the '|' check). Edge case: a '|' or ';' INSIDE a quoted arg
+    conservatively still routes sync — harmless, since the sync path runs the same
+    command (just without yielding)."""
+    return ('|' in raw) or (';' in raw) or ('&&' in raw)
 
 
 def _resolve_async_app(cmd, args):
