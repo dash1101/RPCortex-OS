@@ -477,7 +477,7 @@ def _login_xfer(dest):
         sys.stdout.write("XFER_INSTALLING\r\n")
         try:
             import pkgmgr
-            result = pkgmgr.install(dest)
+            result = pkgmgr.install(dest, force=True)
             if result:
                 sys.stdout.write("XFER_INSTALLED\r\n")
             else:
