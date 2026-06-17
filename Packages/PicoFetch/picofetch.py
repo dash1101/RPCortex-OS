@@ -1,4 +1,4 @@
-# Desc: System information display for RPCortex - Nebula OS  (neofetch style)
+# Desc: System information display for RPCortex - Vela OS  (neofetch style)
 # File: /Packages/PicoFetch/picofetch.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English
@@ -268,15 +268,15 @@ def fetch(args=None, show_ascii=True):
     wifi    = _get_wifi()
     swatch1, swatch2 = _color_swatches()
 
-    # Header line:  user@nebula
+    device_id = _reg('System.Device_ID') or 'vela'
+
+    # Header line:  user@<device_id>
     host_line = (
-        accent + bold + user   + reset +
-        white  + '@'           + reset +
-        accent + bold + 'nebula' + reset
+        accent + bold + user      + reset +
+        white  + '@'              + reset +
+        accent + bold + device_id + reset
     )
     separator = accent + ('\u2500' * 28) + reset
-
-    device_id = _reg('System.Device_ID') or 'nebula'
 
     info_rows = [
         ('OS',      'RPCortex {}  ({})'.format(os_ver, sys.platform)),
@@ -291,7 +291,7 @@ def fetch(args=None, show_ascii=True):
         ('Uptime',  uptime),
         ('WiFi',    wifi),
         ('UID',     uid),
-        ('Shell',   'Launchpad  (RPCortex Nebula)'),
+        ('Shell',   'Launchpad  (RPCortex Vela)'),
     ]
 
     right = []
