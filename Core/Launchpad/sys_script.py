@@ -2,7 +2,7 @@
 # File: /Core/Launchpad/sys_script.py
 # Last Updated: 6/11/2026
 # Lang: MicroPython, English
-# Version: v0.9.1
+# Version: v1.0.0
 #
 # A small, line-oriented scripting language for automating the shell.  Scripts
 # run through the live Launchpad engine, so every shell command (and pipes /

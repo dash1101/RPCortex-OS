@@ -2,7 +2,7 @@
 # File: /Core/regedit.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English
-# Version: v0.8.2
+# Version: v1.0.0
 # Author: dash1101
 #
 # The registry is an INI-style config file at /Vela/Registry/registry.cfg.

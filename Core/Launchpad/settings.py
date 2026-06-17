@@ -2,7 +2,7 @@
 # File: /Core/Launchpad/settings.py
 # Last Updated: 6/11/2026
 # Lang: MicroPython, English
-# Version: v0.9.1
+# Version: v1.0.0
 # Author: dash1101
 #
 # SysMon-styled settings manager. Toggles boolean registry keys and edits
