@@ -1,4 +1,4 @@
-# Desc: RPCortex shell scripting (.rps) - Pulsar OS
+# Desc: RPCortex shell scripting (.rps) - Vela OS
 # File: /Core/Launchpad/sys_script.py
 # Last Updated: 6/11/2026
 # Lang: MicroPython, English

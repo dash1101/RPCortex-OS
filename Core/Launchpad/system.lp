@@ -1,4 +1,4 @@
-# RPCortex Pulsar — Launchpad system command registry
+# RPCortex Vela — Launchpad system command registry
 # Format: command_name:/path/to/file.py:function_name
 
 # ---------------------------------------------------------------------------

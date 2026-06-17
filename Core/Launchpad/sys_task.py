@@ -1,4 +1,4 @@
-# Desc: Startup task management - RPCortex Pulsar OS
+# Desc: Startup task management - RPCortex Vela OS
 # File: /Core/Launchpad/sys_task.py
 # Last Updated: 6/10/2026
 # Lang: MicroPython, English
@@ -21,7 +21,7 @@ if '/Core' not in sys.path:
 
 from RPCortex import warn, error, info, ok, multi
 
-_CFG = '/Pulsar/Registry/startup.cfg'
+_CFG = '/Vela/Registry/startup.cfg'
 _HEADER = (
     "# RPCortex startup tasks — one command per line, run once at login.\n"
     "# Manage with: startup add/remove/list/clear\n"
@@ -149,7 +149,7 @@ def startup(args=None):
 # (`startup add task run`) for an autonomous, headless device.
 # ===========================================================================
 
-_TASKS = '/Pulsar/Registry/tasks.cfg'
+_TASKS = '/Vela/Registry/tasks.cfg'
 _THEADER = (
     "# RPCortex scheduled tasks — '<seconds>\\t<command>' per line.\n"
     "# Manage with: task add <secs> <command> / list / remove <n> / clear\n"
@@ -378,7 +378,7 @@ def task(args=None):
 #   service clear           empty services.cfg
 # ===========================================================================
 
-_SERVICES = '/Pulsar/Registry/services.cfg'
+_SERVICES = '/Vela/Registry/services.cfg'
 _SHEADER = (
     "# RPCortex background services — one start command per line, run by the\n"
     "# async shell at login. e.g.  httpd start --bg\n"

@@ -1,4 +1,4 @@
-# Desc: Filesystem shell commands - RPCortex Pulsar OS
+# Desc: Filesystem shell commands - RPCortex Vela OS
 # File: /Core/Launchpad/sys_fs.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English

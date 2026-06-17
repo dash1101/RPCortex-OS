@@ -1,4 +1,4 @@
-# Desc: System info/control shell commands - RPCortex Pulsar OS
+# Desc: System info/control shell commands - RPCortex Vela OS
 # File: /Core/Launchpad/sys_sys.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English
@@ -283,7 +283,7 @@ def keycode(args=None):
 
 
 def env(args=None):
-    REG_PATH = '/Pulsar/Registry/registry.cfg'
+    REG_PATH = '/Vela/Registry/registry.cfg'
     section_filter = args.strip().lower() if args else None
     try:
         with open(REG_PATH, 'r') as f:
@@ -484,14 +484,14 @@ def factoryreset(args=None):
     # --- 1. Clear user accounts -----------------------------------------
     info("Clearing user accounts...", p="Reset")
     try:
-        with open('/Pulsar/Registry/user.cfg', 'w') as f:
+        with open('/Vela/Registry/user.cfg', 'w') as f:
             f.write('')
         ok("User accounts cleared.", p="Reset")
     except OSError as e:
         warn("Could not clear user.cfg: {}".format(e), p="Reset")
     # Remove backup if present
     try:
-        uos.remove('/Pulsar/Registry/user.cfg.bak')
+        uos.remove('/Vela/Registry/user.cfg.bak')
     except OSError:
         pass
 
@@ -499,12 +499,12 @@ def factoryreset(args=None):
     info("Resetting registry...", p="Reset")
     try:
         regedit._invalidate()
-        uos.remove('/Pulsar/Registry/registry.cfg')
+        uos.remove('/Vela/Registry/registry.cfg')
         ok("Registry deleted — will be recreated from template on next boot.", p="Reset")
     except OSError as e:
         warn("Could not remove registry: {}".format(e), p="Reset")
     try:
-        uos.remove('/Pulsar/Registry/registry.cfg.bak')
+        uos.remove('/Vela/Registry/registry.cfg.bak')
     except OSError:
         pass
 
@@ -548,9 +548,9 @@ def factoryreset(args=None):
     # --- 5. Clear session logs -------------------------------------------
     info("Clearing logs...", p="Reset")
     try:
-        for fname in uos.listdir('/Pulsar/Logs'):
+        for fname in uos.listdir('/Vela/Logs'):
             try:
-                uos.remove('/Pulsar/Logs/' + fname)
+                uos.remove('/Vela/Logs/' + fname)
             except OSError:
                 pass
         ok("Logs cleared.", p="Reset")
@@ -612,7 +612,7 @@ def _full_reinstall(rpc_src=None, online=False):
     warn("=" * 60, p="Wipe")
     multi("")
     multi("  EVERY file on the device will be erased, including:")
-    multi("    /Core/   /Packages/   /Pulsar/   /Users/   /Programs/")
+    multi("    /Core/   /Packages/   /Vela/   /Users/   /Programs/")
     multi("  (a normal 'update online' keeps your data — use that unless you")
     multi("   specifically want a clean factory reinstall.)")
     multi("")
@@ -679,7 +679,7 @@ def _full_reinstall(rpc_src=None, online=False):
             warn("Continuing wipe — use Web Installer to restore.", p="Wipe")
 
     # --- Wipe all OS directories -----------------------------------------
-    _WIPE = ('/Core', '/Packages', '/Pulsar', '/Users', '/Programs', '/Sandbox')
+    _WIPE = ('/Core', '/Packages', '/Vela', '/Users', '/Programs', '/Sandbox')
     info("Wiping OS files...", p="Wipe")
     for d in _WIPE:
         try:
@@ -948,8 +948,8 @@ def _update_from_file(archive_path, new_build=None):
     multi("")
     multi("  OS files will be overwritten.  User data is preserved:")
     multi("    /Users/              (home directories)")
-    multi("    /Pulsar/Registry/    (registry + user accounts)")
-    multi("    /Pulsar/pkg/         (package cache + repos)")
+    multi("    /Vela/Registry/      (registry + user accounts)")
+    multi("    /Vela/pkg/           (package cache + repos)")
     multi("")
     multi("  Tip: run 'freeup' first if you're on a Pico 1 with limited RAM.")
     multi("")
@@ -1045,7 +1045,7 @@ def _update_help():
     multi("    update reinstall <path>    Stage a local .rpc, then wipe + install")
     multi("")
     multi("  check / online / from-file preserve user data:")
-    multi("    /Users/  /Pulsar/  programs.lp (installed packages)")
+    multi("    /Users/  /Vela/  programs.lp (installed packages)")
     multi("")
     multi("  You can also update from the browser (no WiFi needed on device):")
     multi("    rpc.novalabs.app/update")

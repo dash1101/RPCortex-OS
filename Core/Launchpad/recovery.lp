@@ -1,4 +1,4 @@
-# RPCortex Pulsar — recovery & diagnostic command registry
+# RPCortex Vela — recovery & diagnostic command registry
 # Kept separate from system.lp so these tools still load if system.lp is damaged.
 # Format: command_name:/path/to/file.py:function_name
 fscheck:/Core/Launchpad/sys_recovery.py:fscheck

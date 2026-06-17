@@ -1,4 +1,4 @@
-# Desc: Package manager for RPCortex - Pulsar OS
+# Desc: Package manager for RPCortex - Vela OS
 # File: /Core/pkgmgr.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English
@@ -40,9 +40,9 @@ _CY = '\x1b[96m'; _GR = '\x1b[92m'; _YL = '\x1b[93m'; _DG = '\x1b[90m'; _R = '\x
 
 PACKAGES_DIR = '/Packages'
 PROGRAMS_LP  = '/Core/Launchpad/programs.lp'
-PKG_BASE     = '/Pulsar/pkg'
-REPOS_CFG    = '/Pulsar/pkg/repos.cfg'
-CACHE_DIR    = '/Pulsar/pkg/cache'
+PKG_BASE     = '/Vela/pkg'
+REPOS_CFG    = '/Vela/pkg/repos.cfg'
+CACHE_DIR    = '/Vela/pkg/cache'
 
 # ---------------------------------------------------------------------------
 # Minimal ZIP reader  (stored and deflate-compressed entries)

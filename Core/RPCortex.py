@@ -1,4 +1,4 @@
-# Desc: Core output utilities and session logging for RPCortex - Pulsar OS
+# Desc: Core output utilities and session logging for RPCortex - Vela OS
 # File: /Core/RPCortex.py
 # Last Updated: 6/10/2026
 # Lang: MicroPython, English
@@ -100,7 +100,7 @@ WHITE_AT  = '\033[97m'
 # Session log
 # ---------------------------------------------------------------------------
 
-LOG_DIR    = '/Pulsar/Logs'
+LOG_DIR    = '/Vela/Logs'
 LATEST_LOG = LOG_DIR + '/latest.log'
 MAX_LOGS   = 10
 

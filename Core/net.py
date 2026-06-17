@@ -1,4 +1,4 @@
-# Desc: WiFi networking and HTTP client for RPCortex - Pulsar OS
+# Desc: WiFi networking and HTTP client for RPCortex - Vela OS
 # File: /Core/net.py
 # Last Updated: 6/10/2026
 # Lang: MicroPython, English
@@ -25,7 +25,7 @@ from RPCortex import ok, warn, error, info, multi, spin, spin_done
 
 # Saved networks file — one "ssid\tpassword" per line (unlimited entries).
 # Replaces the old 2-slot registry approach (Networks.WiFi_SSID_1/2).
-_NETWORKS_FILE = '/Pulsar/Registry/networks.cfg'
+_NETWORKS_FILE = '/Vela/Registry/networks.cfg'
 
 # ---------------------------------------------------------------------------
 # Detection helpers
@@ -515,7 +515,7 @@ def wget(url, dest=None, chunk_size=512, verbose=True):
             req = (
                 'GET {} HTTP/1.0\r\n'
                 'Host: {}\r\n'
-                'User-Agent: RPCortex-Pulsar/0.9\r\n'
+                'User-Agent: RPCortex-Vela/1.0\r\n'
                 'Connection: close\r\n\r\n'
             ).format(path, host)
             s.send(req.encode())
@@ -1111,7 +1111,7 @@ def curl(url, chunk_size=512, verbose=False, method='GET', data=None,
             lines = [
                 '{} {} HTTP/1.0'.format(method, path),
                 'Host: {}'.format(host),
-                'User-Agent: RPCortex-Pulsar/0.9',
+                'User-Agent: RPCortex-Vela/1.0',
             ]
             has_ct = False
             if headers:

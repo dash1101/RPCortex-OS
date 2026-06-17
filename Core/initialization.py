@@ -1,4 +1,4 @@
-# Desc: Boot initialization and login sequence for RPCortex - Pulsar OS
+# Desc: Boot initialization and login sequence for RPCortex - Vela OS
 # File: /Core/initialization.py
 # Last Updated: 6/10/2026
 # Lang: MicroPython, English
@@ -262,18 +262,18 @@ def setup_seq():
     # --- Silent: add official package repo ----------------------------------
     _REPO = 'https://raw.githubusercontent.com/dash1101/RPCortex-repo/main/repo/index.json'
     try:
-        for _d in ('/Pulsar/pkg', '/Pulsar/pkg/cache'):
+        for _d in ('/Vela/pkg', '/Vela/pkg/cache'):
             try:
                 uos.mkdir(_d)
             except OSError:
                 pass
         try:
-            with open('/Pulsar/pkg/repos.cfg', 'r') as _f:
+            with open('/Vela/pkg/repos.cfg', 'r') as _f:
                 _existing = _f.read()
         except Exception:
             _existing = ''
         if _REPO not in _existing:
-            with open('/Pulsar/pkg/repos.cfg', 'a') as _f:
+            with open('/Vela/pkg/repos.cfg', 'a') as _f:
                 _f.write(_REPO + '\n')
     except Exception:
         pass   # non-fatal; user can add manually with `pkg repo add`

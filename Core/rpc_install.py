@@ -31,7 +31,7 @@ from RPCortex import ok, warn, error, info
 
 _SKIP = (
     'website/', 'repo/', '.git', '__pycache__', 'CLAUDE',
-    'Users/', 'Nebula/', 'Pulsar/', 'temp/', 'tests/',
+    'Users/', 'Nebula/', 'Pulsar/', 'Vela/', 'temp/', 'tests/',
 )
 _EXTS = ('.py', '.cfg', '.lp', '.mpy', '.json')   # .mpy: compiled; .json: bundled repo index
 
@@ -214,7 +214,7 @@ def install_rpc(archive_path):
         info("Stripping prefix: '{}'.".format(prefix), p="Update")
 
     # ── Extract wanted files ───────────────────────────────────────
-    info("Preserving: /Users/  /Pulsar/  programs.lp (user packages)", p="Update")
+    info("Preserving: /Users/  /Vela/  programs.lp (user packages)", p="Update")
 
     # Pre-count wanted files so we can show progress as [n/total]
     n_wanted = 0

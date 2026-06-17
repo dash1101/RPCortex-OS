@@ -1,4 +1,4 @@
-# Desc: WiFi management shell commands for RPCortex - Pulsar OS
+# Desc: WiFi management shell commands for RPCortex - Vela OS
 # File: /Core/Launchpad/wifi.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English
