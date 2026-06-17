@@ -2,7 +2,7 @@
 # File: /Core/Launchpad/wifi.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English
-# Version: v0.8.2
+# Version: v1.0.0
 # Author: dash1101
 #
 # Loaded once into a cached exec scope by launchpad.py.

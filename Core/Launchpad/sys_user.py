@@ -2,7 +2,7 @@
 # File: /Core/Launchpad/sys_user.py
 # Last Updated: 6/12/2026
 # Lang: MicroPython, English
-# Version: v0.9.1
+# Version: v1.0.0
 
 import sys
 if '/Core' not in sys.path:

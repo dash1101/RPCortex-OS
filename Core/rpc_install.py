@@ -2,7 +2,7 @@
 # File: /Core/rpc_install.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English
-# Version: v0.8.2
+# Version: v1.0.0
 # Author: dash1101
 #
 # .rpc files are standard ZIP archives (renamed).  Used by:

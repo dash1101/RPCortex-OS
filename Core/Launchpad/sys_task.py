@@ -2,7 +2,7 @@
 # File: /Core/Launchpad/sys_task.py
 # Last Updated: 6/10/2026
 # Lang: MicroPython, English
-# Version: v0.9.1
+# Version: v1.0.0
 #
 # Startup tasks let a standalone device do work on its own: any commands listed
 # here run once, automatically, right after login — before the prompt opens.

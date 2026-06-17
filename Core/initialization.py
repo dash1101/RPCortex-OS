@@ -2,7 +2,7 @@
 # File: /Core/initialization.py
 # Last Updated: 6/10/2026
 # Lang: MicroPython, English
-# Version: v0.9.1
+# Version: v1.0.0
 # Author: dash1101
 
 from Core.RPCortex import multi, fatal, error, info, warn, ok, inpt, masked_inpt, OS_VERSION, OS_CODENAME, OS_BUILD, OS_STAGE

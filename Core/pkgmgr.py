@@ -2,7 +2,7 @@
 # File: /Core/pkgmgr.py
 # Last Updated: 6/9/2026
 # Lang: MicroPython, English
-# Version: v0.8.2
+# Version: v1.0.0
 # Author: dash1101
 #
 # Package format:  .pkg  (standard ZIP archive renamed)
