@@ -58,6 +58,24 @@ registries.
   retry); critical commands (`reboot`, `freeup`, `gc`, `alias`, `_xfer`, …)
   bypass `exec()` and always work even with a fragmented heap.
 
+## 2a. True multitasking (v1.0)
+
+The shell runs on an asyncio event loop **by default**, so the device does more
+than one thing at a time.
+
+- **Background services** — start a long-running service like `httpd start --bg`
+  and keep using the prompt; it serves in the background. Manage with
+  `service list|add|remove|clear`, seeded from `/Vela/Registry/services.cfg`.
+- **Cooperative app framework (`Core/appkit.py`)** — a foreground TUI app (e.g.
+  `sysmon`) yields at refresh boundaries, so it runs *alongside* background
+  services on one terminal without either corrupting the other's screen.
+- **Async networking** — `ping`, `wget`, and `curl` yield to the loop, so a
+  download or a ping doesn't freeze a running service; httpd's `--bg` server
+  streams responses asynchronously too.
+- **Safe by design** — a crash sentinel falls back to the classic synchronous
+  shell automatically, so async can never lock you out. `asyncmode off` opts out
+  permanently; the sync shell is also the recovery/crash fallback.
+
 ## 3. Commands
 
 ### Filesystem (`sys_fs.py`)
@@ -72,7 +90,8 @@ registries.
 (+ `date set` to set the RTC), `watch [-n s] <cmd>`, `ver`/`uname`, `clear`/`cls`,
 `pulse` (clock management), `edit`/`nano`/`vi`/`vim`, `env`, `reg`, `freeup`/`gc`,
 `settings`, `help`/`man`, `echo`/`print` (+ `>`/`>>` redirect), `history`, `sleep`,
-`which`, `keycode` (raw key-byte diagnostic), `factoryreset`, `reinstall`, `update`.
+`which`, `keycode` (raw key-byte diagnostic), `factoryreset`, `update` (incl.
+`update reinstall`), `asyncmode`.
 Many commands carry Unix/DOS synonyms (`ll`/`la`, `more`/`less`, `cat`, `dir`,
 `del`, `id`, …) and read-paths are case-insensitive (`ls packages` → `/Packages`).
 
@@ -98,6 +117,13 @@ actions (e.g. `pkg remove --force`).
 - `task list|add <secs> <cmd>|remove <n>|clear|run` — scheduled tasks on a
   software-uptime timer (`/Vela/Registry/tasks.cfg`); `task run` is a
   responsive foreground scheduler (q / Ctrl+C).
+- `task background on|off|status` — fire due tasks while you're idle at the prompt.
+- `service list|add <cmd>|remove <n>|clear` — background services that keep
+  running while you work, e.g. `httpd start --bg`; `service test` is a built-in
+  async-loop self-test.
+- `asyncmode on|off|status` — switch between the multitasking (async) shell (the
+  v1.0 default) and the classic synchronous shell.
+- `autonomy on [user]|off|status` — boot straight to a shell with no login.
 - `startup add task run` = headless autonomous mode.
 
 ### Scripting (`sys_script.py`)
@@ -143,6 +169,9 @@ condition.
 - HTTP client v2 — fully iterative redirect following, 15 s timeout, streamed
   bodies (no whole-file RAM), HTTPS with heap-consolidation nudge for Pico 1 W.
 - `wget` / `curl` / `run_url` / `ping` / `nslookup`.
+- **Async variants** (`aping` / `awget` / `acurl`) yield to the event loop, so a
+  ping or download runs without freezing background services; each falls back to
+  the synchronous path if needed.
 
 ## 8. Package manager (`pkgmgr.py` + `pkg` command)
 apt-style manager over a remote repo.
@@ -152,10 +181,13 @@ apt-style manager over a remote repo.
 - Package format: ZIP renamed `.pkg`, built `ZIP_STORED` (no compression
   dependency on-device); optional compiled `.mpy` packages.
 - Built-in packages: **PicoFetch** (`fetch`/`neofetch`), **RPCMark** (`bench`),
-  **NTP** (`ntp sync`), plus Launchpad/Editor stubs. PicoFetch and NTP are
-  removable; core stubs are protected.
-- Repo packages: `calc`, `gpio`, `i2cscan`, `ntp`, `sysmon`, `ask`, `dht`,
-  `speedtest`, `backup`, `helloworld`.
+  **NTP** (`ntp sync`), and the **Editor** (`edit`/`nano`/`vi`); plus a Launchpad
+  stub. PicoFetch, NTP, and Editor are removable/upgradeable; core stubs are
+  protected.
+- Repo packages (19): `calc`, `gpio`, `i2cscan`, `ntp`, `sysmon`, `ask`, `dht`,
+  `speedtest`, `backup`, `fileexp`, `desktop`, `ide`, `httpd`, `mkpkg`,
+  `websearch`, `helloworld`, plus the built-ins (`picofetch`, `rpcmark`,
+  `editor`) hosted for re-install.
 
 ## 9. Settings TUI (`settings.py`)
 - SysMon-styled borderless panel with arrow-key navigation + in-place redraw.
@@ -182,8 +214,9 @@ apt-style manager over a remote repo.
 - **`update from-file <path.rpc>`** — apply a staged update archive.
 - **`factoryreset`** — soft reset (wipe users/registry/homes/non-builtin
   packages/logs; POST rebuilds the registry).
-- **`reinstall [path.rpc]`** — full wipe + self-contained stub install.
-- **`.rpc` format** — flat source-only ZIP (`.py`/`.cfg`/`.lp`), extracted on
+- **`update reinstall [online | <path.rpc>]`** — full wipe + self-contained stub
+  install (folded into `update` in v1.0).
+- **`.rpc` format** — flat ZIP of source *or* compiled `.mpy` (`.py`/`.mpy`/`.cfg`/`.lp`/`.json`), extracted on
   device via a minimal Central-Directory reader.
 - **Web tooling** — Web Serial installer, OS-update-over-USB page, and a web
   package browser (`_xfer` base64 serial protocol — no REPL, no reboot).
