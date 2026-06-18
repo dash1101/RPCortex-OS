@@ -1,12 +1,12 @@
-   <a href="https://github.com/dash1101/RPCortex">
+   <a href="https://github.com/dash1101/RPCortex-OS">
      <p align="center">
        <img src="RPCortex.png" alt="RPCortex Logo">
      </p>
    </a>
 
-   <a href="https://github.com/dash1101/RPCortex"><img src="https://img.shields.io/github/v/release/dash1101/RPCortex?include_prereleases&label=Latest%20Release"></a>
-   <a href="https://github.com/dash1101/RPCortex/issues"><img src="https://img.shields.io/github/issues/dash1101/RPCortex"></a>
-   <a href="https://github.com/dash1101/RPCortex/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-orange"></a>
+   <a href="https://github.com/dash1101/RPCortex-OS"><img src="https://img.shields.io/github/v/release/dash1101/RPCortex-OS?include_prereleases&label=Latest%20Release"></a>
+   <a href="https://github.com/dash1101/RPCortex-OS/issues"><img src="https://img.shields.io/github/issues/dash1101/RPCortex-OS"></a>
+   <a href="https://github.com/dash1101/RPCortex-OS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue"></a>
 
 ---
 
@@ -52,7 +52,7 @@ It's not trying to be Linux. It's a $4 microcontroller running MicroPython. But 
 
 **Tune the hardware.** `pulse set 220` overclocks to 220 MHz. `pulse boot 200` sets a boot clock. `bench` runs the RPCMark benchmark. `freeup` compacts the heap when things get fragmented after heavy use.
 
-**Make it yours.** `settings` opens an interactive panel to toggle boot overclocking, WiFi autoconnect, verbose boot, the beeper, SD support, and program execution. `reg get`/`reg set` writes the registry directly. Aliases (`alias ll=ls -l`) build your own shortcuts — and they survive reboots. `watch -n 5 sysinfo` keeps a live readout on screen. `date set` fixes the clock, and `reg set System.TZ_Offset -5` keeps it in your timezone. Name the device's owner (`reg set System.Owner Dash`) and rename the host in your prompt (`reg set System.Device_ID mypico`).
+**Make it yours.** `settings` opens an interactive panel to toggle boot overclocking, WiFi autoconnect, verbose boot, dynamic CPU clocking, SD support, and program execution. `reg get`/`reg set` writes the registry directly. Aliases (`alias ll=ls -l`) build your own shortcuts — and they survive reboots. `watch -n 5 sysinfo` keeps a live readout on screen. `date set` fixes the clock, and `reg set System.TZ_Offset -5` keeps it in your timezone. Name the device's owner (`reg set System.Owner Dash`) and rename the host in your prompt (`reg set System.Device_ID mypico`).
 
 **Recover from trouble.** If something breaks, recovery mode gives you a limited shell plus repair tools: `fscheck` verifies the core files are intact, `diag` prints a health snapshot, `logdump` shows the session log, `regreset` rebuilds a corrupt registry (keeping your accounts and WiFi), and `pkgdisable` quarantines a misbehaving package without removing it.
 
@@ -103,13 +103,13 @@ update check
 - **[ROADMAP](https://rpc.novalabs.app/roadmap)** — what's shipped, what's next, and where ideas land
 - **[rpc.novalabs.app](https://rpc.novalabs.app)** — web installer, package browser, OS updater, and HTML docs
 - **[Package Dev Guide](https://rpc.novalabs.app/PackageDev)** — build and publish your own packages
-- **[Issues](https://github.com/dash1101/RPCortex/issues)** — bug reports and feature requests
+- **[Issues](https://github.com/dash1101/RPCortex-OS/issues)** — bug reports and feature requests
 
 ---
 
 ## License
 
-Open source. Explicit credit to **[@dash1101](https://github.com/dash1101)** is required for use in public projects. See [LICENSE](https://github.com/dash1101/RPCortex/blob/main/LICENSE).
+RPCortex is free software under the **[GNU General Public License v3.0](https://github.com/dash1101/RPCortex-OS/blob/main/LICENSE)**. You're free to use it, study it, modify it, and share it — the one condition is that anything you build on it stays open under the same license. See [LICENSE](https://github.com/dash1101/RPCortex-OS/blob/main/LICENSE) for the full text.
 
 ---
 
