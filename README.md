@@ -6,7 +6,7 @@
 
    <a href="https://github.com/dash1101/RPCortex-OS"><img src="https://img.shields.io/github/v/release/dash1101/RPCortex-OS?include_prereleases&label=Latest%20Release"></a>
    <a href="https://github.com/dash1101/RPCortex-OS/issues"><img src="https://img.shields.io/github/issues/dash1101/RPCortex-OS"></a>
-   <a href="https://github.com/dash1101/RPCortex-OS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue"></a>
+   <a href="https://github.com/dash1101/RPCortex-OS/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Proprietary%20(source--available)-fb923c"></a>
 
 ---
 
@@ -109,7 +109,7 @@ update check
 
 ## License
 
-RPCortex is free software under the **[GNU General Public License v3.0](https://github.com/dash1101/RPCortex-OS/blob/main/LICENSE)**. You're free to use it, study it, modify it, and share it — the one condition is that anything you build on it stays open under the same license. See [LICENSE](https://github.com/dash1101/RPCortex-OS/blob/main/LICENSE) for the full text.
+RPCortex is **proprietary, source-available** software — © 2026 dash1101 (NovaLabs), all rights reserved. The source is public so you can read it, study it, and learn from it, but it is **not** open source: using, copying, modifying, redistributing, or building on it requires prior written permission, and any permitted use must credit dash1101 and RPCortex. Please don't rebadge it as your own. To ask about using it, email **support@novalabs.app**. Full terms in [LICENSE](https://github.com/dash1101/RPCortex-OS/blob/main/LICENSE).
 
 ---
 
