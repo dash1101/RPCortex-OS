@@ -97,6 +97,7 @@ def sysinfo(args=None):
     multi("  Build       : {}  ({})".format(
         regedit.read('System.Build') or _os_build(),
         regedit.read('System.Stage') or _os_stage()))
+    multi("  Image       : {}".format(_image_type()))
     _owner = regedit.read('System.Owner')
     if _owner:
         multi("  Owner       : {}".format(_owner))
@@ -233,7 +234,7 @@ def ver(args=None):
     build    = regedit.read('System.Build') or _os_build()
     stage    = regedit.read('System.Stage') or _os_stage()
     multi("RPCortex {}  —  {}".format(ver_str, codename))
-    multi("Build: {}  ({})".format(build, stage))
+    multi("Build: {}  ({})  [{}]".format(build, stage, _image_type()))
     multi("MicroPython {}   Platform: {}".format(sys.version, sys.platform))
 
 
@@ -253,6 +254,21 @@ def _os_stage():
         return OS_STAGE or 'dev'
     except Exception:
         return 'dev'
+
+
+def _image_type():
+    """Return 'compiled (.mpy)' or 'source (.py)' based on what is on disk."""
+    try:
+        uos.stat('/Core/RPCortex.mpy')
+        return 'compiled (.mpy)'
+    except OSError:
+        pass
+    try:
+        uos.stat('/Core/RPCortex.py')
+        return 'source (.py)'
+    except OSError:
+        pass
+    return 'unknown'
 
 
 def keycode(args=None):
@@ -723,9 +739,17 @@ _FULL_TMP   = '/update.rpc'   # the stub auto-installs this on boot after a wipe
 
 
 def _installed_build():
-    """Read the BUILD id from /Core/buildinfo.py (a source build only — a
-    compiled build ships buildinfo.mpy, so this returns None there and the
-    new build is shown at next login instead). Best-effort."""
+    """Read the build id after an update. Tries the registry first (works for
+    both compiled and source builds), then falls back to /Core/buildinfo.py
+    (source-only). The registry value is updated on the next boot by
+    initialization.start(), so calling this right after an update shows the
+    new id already stored there from the just-installed buildinfo."""
+    try:
+        b = regedit.read('System.Build')
+        if b and b != 'source':
+            return b
+    except Exception:
+        pass
     try:
         with open('/Core/buildinfo.py') as f:
             for line in f:
