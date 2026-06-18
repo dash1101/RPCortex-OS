@@ -14,8 +14,8 @@
 #
 # Notes:
 #   Run compile.sh first if deploying --compiled.
-#   /Nebula/ and /Users/ on the device are never touched — user data is safe.
-#   If the device has no /Nebula/ yet (fresh flash), mpremote mkdir is silent.
+#   /Vela/ and /Users/ on the device are never touched — user data is safe.
+#   If the device has no /Vela/ yet (fresh flash), mpremote mkdir is silent.
 
 set -euo pipefail
 
@@ -85,11 +85,11 @@ MPR="mpremote ${PORT_ARG}"
 # copies ALL package dirs (PicoFetch, RPCMark, NTP, ...), which the per-file
 # version missed.
 #
-# Only Core/, Packages/, and main.py are touched -- /Nebula/ and /Users/
+# Only Core/, Packages/, and main.py are touched -- /Vela/ and /Users/
 # (user data) are never sent, so they're left intact.
 # ---------------------------------------------------------------------------
 echo "  -- Copying OS in one session: Core/, Packages/, main.py --"
-echo "     (user data under /Nebula/ and /Users/ is left untouched)"
+echo "     (user data under /Vela/ and /Users/ is left untouched)"
 echo ""
 
 if ${MPR} cp -r "${SRC_DIR}/Core" : + cp -r "${SRC_DIR}/Packages" : + cp "${SRC_DIR}/main.py" :; then
