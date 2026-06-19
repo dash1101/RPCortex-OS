@@ -1448,6 +1448,10 @@ _ASYNC_SEQ = {
     '\x1b[A': lineedit.UP,    '\x1b[B': lineedit.DOWN,
     '\x1b[C': lineedit.RIGHT, '\x1b[D': lineedit.LEFT,
     '\x1b[H': lineedit.HOME,  '\x1b[F': lineedit.END,
+    # SS3 forms (ESC O x) — some terminals incl. PuTTY send these for cursor keys.
+    '\x1bOA': lineedit.UP,    '\x1bOB': lineedit.DOWN,
+    '\x1bOC': lineedit.RIGHT, '\x1bOD': lineedit.LEFT,
+    '\x1bOH': lineedit.HOME,  '\x1bOF': lineedit.END,
     '\x1b[1~': lineedit.HOME, '\x1b[7~': lineedit.HOME,
     '\x1b[4~': lineedit.END,  '\x1b[8~': lineedit.END,
     '\x1b[3~': lineedit.DELETE,
@@ -2016,113 +2020,92 @@ def _shell_input(prompt):
             _ghost_update()
 
         # --- Escape sequences ---
+        # Consume the FULL CSI/SS3 sequence before dispatching, so no final byte
+        # ever leaks into the line buffer. Handles BOTH CSI ("ESC [") and SS3
+        # ("ESC O", which some terminals incl. PuTTY send for cursor keys — the
+        # old parser only handled "[", so SS3 leaked its final letter A/B/C/D).
+        # Ctrl is detected by the ";5" modifier (e.g. ESC [ 1 ; 5 C = Ctrl+Right).
         elif ch == '\x1b':
             _ghost_clear()
             ghost = ''
             try:
                 n1 = sys.stdin.read(1)
-                if n1 != '[':
-                    continue
-                n2 = sys.stdin.read(1)
+                if n1 not in ('[', 'O'):
+                    continue               # not CSI/SS3 (Alt+key, etc.) — consumed, no leak
+                # read params (digits + ';') then the single final byte
+                params = ''
+                fin = sys.stdin.read(1)
+                guard = 0
+                while fin and fin in '0123456789;' and guard < 12:
+                    params += fin
+                    fin = sys.stdin.read(1)
+                    guard += 1
+                ctrl = ';5' in params      # xterm modifier 5 = Ctrl
 
-                if n2 == 'A':          # Up arrow — older history
+                if fin == 'A' and not ctrl:        # Up — older history
                     if _history and hist_pos > 0:
                         hist_pos -= 1
                     new = _history[hist_pos] if 0 <= hist_pos < len(_history) else ''
                     if cursor > 0:
                         sys.stdout.write('\x1b[{}D'.format(cursor))
                     sys.stdout.write('\x1b[K' + new)
-                    buf    = list(new)
-                    cursor = len(buf)
+                    buf = list(new); cursor = len(buf)
                     _ghost_update()
 
-                elif n2 == 'B':        # Down arrow — newer history
+                elif fin == 'B' and not ctrl:      # Down — newer history
                     if hist_pos < len(_history) - 1:
                         hist_pos += 1
                         new = _history[hist_pos]
                     else:
-                        hist_pos = len(_history)
-                        new = ''
+                        hist_pos = len(_history); new = ''
                     if cursor > 0:
                         sys.stdout.write('\x1b[{}D'.format(cursor))
                     sys.stdout.write('\x1b[K' + new)
-                    buf    = list(new)
-                    cursor = len(buf)
+                    buf = list(new); cursor = len(buf)
                     _ghost_update()
 
-                elif n2 == 'D':        # Left arrow
-                    if cursor > 0:
+                elif fin == 'D':                   # Left  (word-left if Ctrl)
+                    if ctrl:
+                        new = _word_left(buf, cursor)
+                        if new < cursor:
+                            sys.stdout.write('\x1b[{}D'.format(cursor - new))
+                            cursor = new
+                    elif cursor > 0:
                         cursor -= 1
                         sys.stdout.write('\x1b[D')
 
-                elif n2 == 'C':        # Right arrow
-                    if cursor < len(buf):
+                elif fin == 'C':                   # Right (word-right if Ctrl)
+                    if ctrl:
+                        new = _word_right(buf, cursor)
+                        if new > cursor:
+                            sys.stdout.write('\x1b[{}C'.format(new - cursor))
+                            cursor = new
+                    elif cursor < len(buf):
                         cursor += 1
                         sys.stdout.write('\x1b[C')
                     _ghost_update()
 
-                elif n2 == 'H':        # Home (xterm)
+                elif fin == 'H' or params in ('1', '7'):   # Home
                     if cursor > 0:
                         sys.stdout.write('\x1b[{}D'.format(cursor))
                         cursor = 0
 
-                elif n2 == 'F':        # End (xterm)
+                elif fin == 'F' or params in ('4', '8'):   # End
                     if cursor < len(buf):
                         sys.stdout.write('\x1b[{}C'.format(len(buf) - cursor))
                         cursor = len(buf)
                     _ghost_update()
 
-                elif n2 in ('1', '3', '4', '7', '8'):   # VT extended / modified
-                    try:
-                        nxt = sys.stdin.read(1)
-                    except Exception:
-                        nxt = ''
-                    if nxt == '~':
-                        if n2 in ('1', '7'):        # Home
-                            if cursor > 0:
-                                sys.stdout.write('\x1b[{}D'.format(cursor))
-                                cursor = 0
-                        elif n2 in ('4', '8'):      # End
-                            if cursor < len(buf):
-                                sys.stdout.write('\x1b[{}C'.format(len(buf) - cursor))
-                                cursor = len(buf)
-                            _ghost_update()
-                        elif n2 == '3':             # Delete forward
-                            if cursor < len(buf):
-                                del buf[cursor]
-                                tail = ''.join(buf[cursor:])
-                                sys.stdout.write('\x1b[K' + tail)
-                                if tail:
-                                    sys.stdout.write('\x1b[{}D'.format(len(tail)))
-                                _ghost_update()
-                    elif nxt == ';':
-                        # Modified key:  ESC [ <n2> ; <mod> <final>   (mod 5 = Ctrl)
-                        try:
-                            mod = sys.stdin.read(1)
-                            fin = sys.stdin.read(1)
-                        except Exception:
-                            mod = fin = ''
-                        if mod == '5':              # Ctrl held
-                            if n2 == '1' and fin == 'D':       # Ctrl+Left: word left
-                                new = _word_left(buf, cursor)
-                                if new < cursor:
-                                    sys.stdout.write('\x1b[{}D'.format(cursor - new))
-                                    cursor = new
-                            elif n2 == '1' and fin == 'C':     # Ctrl+Right: word right
-                                new = _word_right(buf, cursor)
-                                if new > cursor:
-                                    sys.stdout.write('\x1b[{}C'.format(new - cursor))
-                                    cursor = new
-                                _ghost_update()
-                            elif n2 == '3' and fin == '~':     # Ctrl+Del: word delete fwd
-                                end = _word_right(buf, cursor)
-                                if end > cursor:
-                                    del buf[cursor:end]
-                                    tail = ''.join(buf[cursor:])
-                                    sys.stdout.write('\x1b[K' + tail)
-                                    if tail:
-                                        sys.stdout.write('\x1b[{}D'.format(len(tail)))
-                                    _ghost_update()
+                elif fin == '~' and params.startswith('3'):   # Delete-forward (word if Ctrl)
+                    end = _word_right(buf, cursor) if ctrl else (cursor + 1)
+                    if end > cursor and cursor < len(buf):
+                        del buf[cursor:end]
+                        tail = ''.join(buf[cursor:])
+                        sys.stdout.write('\x1b[K' + tail)
+                        if tail:
+                            sys.stdout.write('\x1b[{}D'.format(len(tail)))
+                        _ghost_update()
+                # any other fully-consumed sequence: ignored, nothing leaks
             except Exception:
                 pass
 

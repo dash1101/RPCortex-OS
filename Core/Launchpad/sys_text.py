@@ -57,22 +57,32 @@ def _iter_input(filepath, stdin):
 # ---------------------------------------------------------------------------
 
 def grep(args):
-    parts = args.split(None, 1) if args else []
-    if not parts:
-        warn("Usage: grep <pattern> <file>   (or  ... | grep <pattern>)")
+    # Pull leading flags (e.g. -i) BEFORE the pattern/file, so `grep -i boot`
+    # isn't misread as pattern='-i', file='boot' (which tried to open a file
+    # named 'boot' → "Cannot read input: ENOENT" when piped). -i = case-insensitive.
+    toks = args.split() if args else []
+    ci = False
+    while toks and toks[0].startswith('-') and len(toks[0]) > 1:
+        flag = toks.pop(0)
+        if 'i' in flag:
+            ci = True
+        # other flags are ignored (forward-compatible)
+    if not toks:
+        warn("Usage: grep [-i] <pattern> [file]   (or  ... | grep [-i] <pattern>)")
         return
-    pattern  = parts[0]
-    filepath = parts[1].strip() if len(parts) > 1 else None
+    pattern  = toks[0]
+    filepath = ' '.join(toks[1:]).strip() if len(toks) > 1 else None
     stdin    = _stdin_text()
     if filepath is None and stdin is None:
-        warn("Usage: grep <pattern> <file>")
+        warn("Usage: grep [-i] <pattern> [file]")
         return
+    needle = pattern.lower() if ci else pattern
     try:
         count = 0
         lnum  = 0
         for line in _iter_input(filepath, stdin):
             lnum += 1
-            if pattern in line:
+            if needle in (line.lower() if ci else line):
                 count += 1
                 multi(_GR + "{:4d}".format(lnum) + _RST + "  " + line.rstrip('\n'))
         if not is_capturing():   # summary is status, not data — skip when piped onward
