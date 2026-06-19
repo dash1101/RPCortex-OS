@@ -1459,8 +1459,10 @@ _ASYNC_SEQ = {
 
 async def _decode_async_key(ch):
     """Map a raw key (or the start of an escape sequence) to a LineEditor token.
-    Returns a token, a 1-char printable string, or None (ignore). The backspace
-    byte mapping matches the sync reader: \\x08 = char, \\x7f / Ctrl+W = word."""
+    Returns a token, a 1-char printable string, or None (ignore). Backspace is
+    terminal-robust: BOTH \\x7f and \\x08 are plain single-char delete (terminals
+    disagree on which one plain Backspace sends), and Ctrl+W (\\x17) is the
+    portable word-delete-back."""
     global _skip_lf
     if _skip_lf:
         _skip_lf = False
@@ -1475,9 +1477,9 @@ async def _decode_async_key(ch):
         return lineedit.TAB
     if ch in ('\x03', '\x04'):
         return lineedit.CANCEL
-    if ch == '\x08':
+    if ch in ('\x08', '\x7f'):
         return lineedit.BACKSPACE
-    if ch in ('\x7f', '\x17'):
+    if ch == '\x17':
         return lineedit.WORD_BACK
     if ch == '\x01':
         return lineedit.HOME
@@ -1845,16 +1847,27 @@ def _shell_input(prompt):
         # scan) runs per-keystroke — path completion hits the filesystem with
         # uos.listdir() and caused visible typing lag at high serial input
         # speeds, so it now only runs on an explicit Tab press.
+        #
+        # Robustness (low-RAM): the dict scan + string work allocates, and on a
+        # starved/fragmented heap that per-keystroke churn (or an outright
+        # MemoryError) would otherwise break typing. So we (a) skip the
+        # suggestion entirely when free RAM is low, and (b) wrap the whole thing
+        # so any failure just drops the hint instead of crashing the line. The
+        # shell stays usable when memory is tight; you only lose the ghost hint.
         nonlocal ghost
-        new_ghost = ''
-        if cursor == len(buf):
-            s = ''.join(buf)
-            if s and ' ' not in s:
-                new_ghost = _tab_complete(s)
-        ghost = new_ghost
-        if ghost:
-            sys.stdout.write('\033[2m\033[90m' + ghost + '\033[0m')
-            sys.stdout.write('\x1b[{}D'.format(len(ghost)))
+        try:
+            import gc as _gc
+            new_ghost = ''
+            if cursor == len(buf) and _gc.mem_free() > 16384:
+                s = ''.join(buf)
+                if s and ' ' not in s:
+                    new_ghost = _tab_complete(s)
+            ghost = new_ghost
+            if ghost:
+                sys.stdout.write('\033[2m\033[90m' + ghost + '\033[0m')
+                sys.stdout.write('\x1b[{}D'.format(len(ghost)))
+        except Exception:
+            ghost = ''
 
     # ─────────────────────────────────────────────────────────────────────────
     while True:
@@ -1947,12 +1960,12 @@ def _shell_input(prompt):
                 _history_add(line)
             return line
 
-        # --- Backspace (delete one char before cursor) ---
-        # This terminal sends \x08 for plain Backspace and \x7f for
-        # Ctrl+Backspace, so \x08 = single char, \x7f = word (below). If a
-        # terminal sends \x7f for plain Backspace (PuTTY's "Control-?" default)
-        # this swaps them; Ctrl+W (\x17) is the portable word-delete either way.
-        elif ch == '\x08':
+        # --- Backspace: delete one char before cursor ---
+        # Terminal-robust: BOTH \x08 and \x7f are plain Backspace (terminals
+        # disagree on which byte they send — PuTTY's default is \x7f, others
+        # send \x08), so both delete a single char. Ctrl+W (\x17) is the
+        # portable word-delete-back that works on every terminal.
+        elif ch in ('\x08', '\x7f'):
             _ghost_clear()
             if cursor > 0:
                 del buf[cursor - 1]
@@ -1964,8 +1977,8 @@ def _shell_input(prompt):
             ghost = ''
             _ghost_update()
 
-        # --- Ctrl+Backspace (\x7f here) / Ctrl+W (\x17): delete word before cursor ---
-        elif ch in ('\x7f', '\x17'):
+        # --- Ctrl+W (\x17): delete word before cursor ---
+        elif ch == '\x17':
             _ghost_clear()
             ghost = ''
             start = _word_left(buf, cursor)
