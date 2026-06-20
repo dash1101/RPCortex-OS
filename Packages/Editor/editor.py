@@ -1,6 +1,6 @@
 # Desc: Terminal text editor (nano-style) for RPCortex - Vela OS
 # File: /Packages/Editor/editor.py
-# Last Updated: 6/17/2026
+# Last Updated: 6/13/2026
 # Lang: MicroPython, English
 # Version: v1.0.0
 # Author: dash1101
@@ -117,9 +117,31 @@ KEY_WORD_DEL   = "WORD_DEL"      # Ctrl+Del
 KEY_WORD_BKSP  = "WORD_BKSP"     # Ctrl+Backspace / Ctrl+W
 KEY_ESC        = "ESC"           # bare Escape
 
+def _read1():
+    """Read exactly one byte, waiting until one is available — via select FIRST,
+    then read. This is the critical detail for running inside the asyncio shell:
+    a bare sys.stdin.read(1) there returns None and never delivers the byte (the
+    event loop owns stdin readability), so the editor would wedge the whole loop.
+    Polling readability with select and only then reading is exactly what
+    appkit.read_key does, and it works in both the async loop and the classic sync
+    shell. It blocks the loop while a key is awaited (background services pause
+    while the editor is open — the documented cooperative limit) but never hangs."""
+    import select as _sel
+    while True:
+        try:
+            if _sel.select([sys.stdin], [], [], 0.05)[0]:
+                ch = sys.stdin.read(1)
+                if ch is not None:
+                    return ch
+        except Exception:
+            ch = sys.stdin.read(1)
+            if ch is not None:
+                return ch
+
+
 def read_key():
     """Read one keypress and return a key token or a character string."""
-    ch = sys.stdin.read(1)
+    ch = _read1()
 
     # Control characters
     if ch == "\x01": return KEY_CTRL_A   # Ctrl+A
@@ -139,11 +161,11 @@ def read_key():
 
     # Escape sequences
     if ch == "\x1b":
-        next1 = sys.stdin.read(1)
+        next1 = _read1()
         if next1 == "[":
             seq = ""
             while True:
-                c = sys.stdin.read(1)
+                c = _read1()
                 seq += c
                 if c.isalpha() or c == "~":
                     break
@@ -163,7 +185,7 @@ def read_key():
             if seq == "3;5~": return KEY_WORD_DEL      # Ctrl+Del
             return None  # unknown escape seq
         elif next1 == "O":
-            c = sys.stdin.read(1)
+            c = _read1()
             if c == "H": return KEY_HOME
             if c == "F": return KEY_END
             return None
