@@ -1564,7 +1564,21 @@ async def _async_input(prompt):
         if sig == 'cancel':
             _render_async(prompt, ed, cancelled=True)
             return ''
-        _render_async(prompt, ed)
+        # Fast path: a printable char appended at the END of the line — by far
+        # the common case while typing. Emit just that char (+ refresh the ghost)
+        # instead of repainting the colored prompt + whole buffer every keystroke,
+        # which is what made typing crawl over serial on slower boards. Any other
+        # edit (mid-line insert, backspace, arrows, history, Tab) takes the full
+        # redraw below, so correctness is unchanged.
+        if (isinstance(tok, str) and len(tok) == 1 and ord(tok) >= 32
+                and ed.cursor == len(ed.buf)):
+            out = tok + '\x1b[K'
+            if ed.ghost:
+                out += '\033[2m\033[90m' + ed.ghost + '\033[0m\x1b[{}D'.format(len(ed.ghost))
+            sys.stdout.write(out)
+            _shell_state['async_line'] = prompt + ed.line()
+        else:
+            _render_async(prompt, ed)
 
 
 async def _scheduler_coro():
