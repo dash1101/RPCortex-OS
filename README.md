@@ -92,7 +92,7 @@ pkg install HelloWorld
 update check
 ```
 
-**Smaller, faster image:** a precompiled `.mpy` build (architecture-neutral — one image for RP2040, RP2350, and ESP32) is ~44% smaller and imports faster. Build it with `compile.bat` / `build_images.py` and deploy with `deploy.bat --compiled`.
+**Smaller, faster image:** a precompiled `.mpy` build (architecture-neutral — one image for RP2040, RP2350, and ESP32) is ~44% smaller and imports faster. Build it with `python compile.py` and deploy with `python deploy.py --compiled` (cross-platform; needs `pip install mpy-cross mpremote`).
 
 ---
 
