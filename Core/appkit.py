@@ -57,11 +57,18 @@ def shell_owns_screen():
 # ---------------------------------------------------------------------------
 # Async input
 # ---------------------------------------------------------------------------
-async def read_key(timeout_ms=None):
+async def read_key(timeout_ms=None, poll_ms=10):
     """Await a single key from stdin WITHOUT blocking the event loop. Returns the
     1-char string, or '' on timeout (when timeout_ms is given). Polls with a
     zero-timeout select and yields via asyncio.sleep_ms between polls, so
-    background coroutines keep running while we wait for a keypress."""
+    background coroutines keep running while we wait for a keypress.
+
+    `poll_ms` is the idle poll interval — the worst-case latency between a *fresh*
+    keypress (after a pause) and us seeing it. Queued bytes return with no sleep
+    at all (the select sees them ready), so CONTINUOUS typing is unpaced and fast
+    on both flagships (measured 6 ms/char ESP32, 18 ms/char 2W). 10 ms balances a
+    snappy first-keypress against idle CPU; callers wanting a coarse refresh tick
+    (e.g. an app's 1 s redraw wait) can pass a larger poll_ms."""
     import asyncio
     import select as _sel
     import utime as _ut
@@ -80,7 +87,39 @@ async def read_key(timeout_ms=None):
                 return ''
         if deadline is not None and _ut.ticks_diff(_ut.ticks_ms(), deadline) >= 0:
             return ''
-        await asyncio.sleep_ms(15)
+        await asyncio.sleep_ms(poll_ms)
+
+
+# ---------------------------------------------------------------------------
+# Async text-line prompt (shared by converted TUIs for rename/filter/etc.)
+# ---------------------------------------------------------------------------
+async def read_line(label='', echo=True):
+    """Cooperative replacement for a blocking input() inside a TUI: read a line of
+    text via read_key (so background services keep running while the user types a
+    filename/search). Returns the string (without the trailing newline), or None
+    if cancelled with ESC. Handles backspace; ignores other control/escape keys."""
+    buf = []
+    if label:
+        w(label)
+    while True:
+        ch = await read_key()
+        if ch in ('\r', '\n'):
+            if echo:
+                w('\r\n')
+            return ''.join(buf)
+        if ch == '\x1b':                       # ESC cancels (drain any CSI tail)
+            await read_escape()
+            return None
+        if ch in ('\x08', '\x7f'):             # backspace
+            if buf:
+                buf.pop()
+                if echo:
+                    w('\x08 \x08')
+            continue
+        if ch and ord(ch) >= 32:
+            buf.append(ch)
+            if echo:
+                w(ch)
 
 
 async def read_escape():
