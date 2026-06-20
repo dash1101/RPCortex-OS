@@ -614,8 +614,26 @@ async def _aopen_connection(host, port, use_ssl, timeout=15):
             import ssl as _ssl
         except ImportError:
             import ussl as _ssl
+        # Pass an SSLContext, NOT the ssl module. asyncio's ssl= path calls
+        # <ssl>.wrap_socket(sock, server_hostname=..., do_handshake_on_connect=...);
+        # the legacy module-level wrap_socket rejects do_handshake_on_connect on
+        # this firmware ("unexpected keyword argument"), but SSLContext.wrap_socket
+        # accepts it. CERT_NONE matches the sync path (no CA bundle on-device).
+        ctx = _ssl
+        try:
+            ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+        except AttributeError:
+            try:
+                ctx = _ssl.SSLContext()
+            except Exception:
+                ctx = _ssl
+        if ctx is not _ssl:
+            try:
+                ctx.verify_mode = _ssl.CERT_NONE
+            except Exception:
+                pass
         return await asyncio.wait_for(
-            asyncio.open_connection(host, port, ssl=_ssl, server_hostname=host),
+            asyncio.open_connection(host, port, ssl=ctx, server_hostname=host),
             timeout)
     return await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
 
