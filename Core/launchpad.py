@@ -1448,16 +1448,18 @@ _ASYNC_SEQ = {
     '\x1b[A': lineedit.UP,    '\x1b[B': lineedit.DOWN,
     '\x1b[C': lineedit.RIGHT, '\x1b[D': lineedit.LEFT,
     '\x1b[H': lineedit.HOME,  '\x1b[F': lineedit.END,
-    # SS3 forms (ESC O x) — some terminals incl. PuTTY send these for cursor keys.
-    '\x1bOA': lineedit.UP,    '\x1bOB': lineedit.DOWN,
-    '\x1bOC': lineedit.RIGHT, '\x1bOD': lineedit.LEFT,
+    # SS3 forms (ESC O x). On the dev's terminals PLAIN arrows are CSI (ESC [ x),
+    # and PuTTY sends the SS3 form for CTRL+arrows — so SS3 left/right are word
+    # ops here (verified against PuTTY keycodes). Up/Down/Home/End SS3 stay as-is.
+    '\x1bOA': lineedit.UP,         '\x1bOB': lineedit.DOWN,
+    '\x1bOC': lineedit.WORD_RIGHT, '\x1bOD': lineedit.WORD_LEFT,
     '\x1bOH': lineedit.HOME,  '\x1bOF': lineedit.END,
     '\x1b[1~': lineedit.HOME, '\x1b[7~': lineedit.HOME,
     '\x1b[4~': lineedit.END,  '\x1b[8~': lineedit.END,
     '\x1b[3~': lineedit.DELETE,
-    '\x1b[1;5D': lineedit.WORD_LEFT,
+    '\x1b[1;5D': lineedit.WORD_LEFT,   # CSI modifier form (mpremote / xterm)
     '\x1b[1;5C': lineedit.WORD_RIGHT,
-    '\x1b[3;5~': lineedit.WORD_DEL,
+    '\x1b[3;5~': lineedit.WORD_DEL,    # Ctrl+Del (mpremote; PuTTY sends nothing)
 }
 
 
@@ -2064,7 +2066,10 @@ def _shell_input(prompt):
                     params += fin
                     fin = sys.stdin.read(1)
                     guard += 1
-                ctrl = ';5' in params      # xterm modifier 5 = Ctrl
+                # Ctrl = the xterm modifier-5 form (mpremote), OR PuTTY's SS3
+                # left/right (ESC O C/D), which it sends for Ctrl+arrows while
+                # plain arrows come through as CSI (ESC [ C/D).
+                ctrl = (';5' in params) or (n1 == 'O' and fin in ('C', 'D'))
 
                 if fin == 'A' and not ctrl:        # Up — older history
                     if _history and hist_pos > 0:
