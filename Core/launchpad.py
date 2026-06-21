@@ -1533,9 +1533,18 @@ async def _async_input(prompt):
                              word_left=_word_left, word_right=_word_right)
     _render_async(prompt, ed)
     idle_t0 = _ut.ticks_ms()
+    idle_polls = 0                            # consecutive 500 ms idle slices
     while True:
-        ch = await appkit.read_key(timeout_ms=500)
+        # Adaptive idle backoff: poll fast (8 ms) while actively typing, but ease
+        # off to 40 ms after ~2 s of no input. Cuts idle wakeups ~75% (less power
+        # /heat, and lets the dynamic clock idle deeper) with no cost to active
+        # typing — queued bytes still return with no sleep, and the first key
+        # after deep idle is seen within 40 ms. Background services run on their
+        # own coroutines, so they're unaffected either way.
+        poll_ms = 8 if idle_polls < 4 else 40
+        ch = await appkit.read_key(timeout_ms=500, poll_ms=poll_ms)
         if ch == '':                          # idle slice — no key this round
+            idle_polls += 1
             if ed.is_empty():
                 _apply_dyn_clock(False)
                 if _shell_state.get('idle_enabled'):
@@ -1551,6 +1560,7 @@ async def _async_input(prompt):
             continue
         _apply_dyn_clock(True)
         idle_t0 = _ut.ticks_ms()              # any key resets the idle timer
+        idle_polls = 0                        # ...and snaps the poll back to fast
         tok = await _decode_async_key(ch)
         if tok is None:
             continue
