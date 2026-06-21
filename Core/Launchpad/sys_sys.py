@@ -733,9 +733,23 @@ def _full_reinstall(rpc_src=None, online=False):
 # OS update  (apply a .rpc archive to the running OS)
 # ---------------------------------------------------------------------------
 
-_LATEST_URL = 'https://rpc.novalabs.app/releases/latest.json'
+_LATEST_URL = 'https://rpc.novalabs.app/releases/latest.json'      # stable channel
+_BETA_URL   = 'https://rpc.novalabs.app/releases/latest-dev.json'  # beta / dev channel
 _OTA_TMP    = '/update.rpc'
 _FULL_TMP   = '/update.rpc'   # the stub auto-installs this on boot after a wipe
+
+
+def _update_channel():
+    """The OTA channel this device tracks: 'beta' if opted in, else 'stable'.
+    Stable is the default (absent/blank key), so existing devices are never
+    auto-moved onto beta builds."""
+    return 'beta' if (regedit.read('Settings.Update_Channel') or '').strip().lower() == 'beta' \
+        else 'stable'
+
+
+def _manifest_url():
+    """The manifest URL for the active channel — beta reads latest-dev.json."""
+    return _BETA_URL if _update_channel() == 'beta' else _LATEST_URL
 
 
 def _installed_build():
@@ -818,7 +832,7 @@ def _fetch_manifest():
         cache.clear()
     gc.collect()
     try:
-        status, body = net.wget(_LATEST_URL, verbose=False)
+        status, body = net.wget(_manifest_url(), verbose=False)
     except Exception as e:
         error("Could not reach update server: {}".format(e))
         return None
@@ -833,12 +847,33 @@ def _fetch_manifest():
         return None
 
 
+def _update_channel_cmd(rest):
+    """Show or set the OTA update channel: 'stable' (default) or 'beta'."""
+    if not rest:
+        info("Update channel : {}".format(_update_channel()), p="Update")
+        multi("  stable  recommended releases (default)")
+        multi("  beta    v1.0 'Vela' dev builds — opt-in, may be rough")
+        multi("  Switch:  update channel beta   |   update channel stable")
+        return
+    val = rest.strip().lower()
+    if val not in ('stable', 'beta'):
+        warn("Channel must be 'stable' or 'beta'.")
+        return
+    regedit.save('Settings.Update_Channel', val)
+    ok("Update channel set to '{}'.".format(val), p="Update")
+    if val == 'beta':
+        multi("  Beta builds are opt-in and may be unstable. Run 'update check'.")
+    else:
+        multi("  Future checks track stable. (This won't downgrade a beta install.)")
+
+
 def _update_check():
     """Check for a newer OS version. Returns the manifest if newer, else None."""
     cur = regedit.read('Settings.Version') or 'v0.0.0'
     cur_b = regedit.read('System.Build') or 'source'
-    info("Current version : {}  (build {})".format(cur, cur_b), p="Update")
-    info("Checking {} ...".format(_LATEST_URL), p="Update")
+    info("Current version : {}  (build {})  [{} channel]".format(
+        cur, cur_b, _update_channel()), p="Update")
+    info("Checking {} ...".format(_manifest_url()), p="Update")
     manifest = _fetch_manifest()
     if manifest is None:
         return None
@@ -899,6 +934,7 @@ def update(args=None):
       update check               Check the update server for a newer version
       update online [--force]    Download the latest release and install it (OTA)
       update from-file <path>    Extract a .rpc to device, preserve user data, reboot
+      update channel [beta|stable]  Show or switch the update channel
     """
     if not args:
         _update_help()
@@ -916,6 +952,9 @@ def update(args=None):
 
     elif sub == 'check':
         _update_check()
+
+    elif sub == 'channel':
+        _update_channel_cmd(rest)
 
     elif sub == 'online':
         _update_online(force=(rest == '--force'))
@@ -1077,6 +1116,7 @@ def _update_help():
     multi("  update online              Download + install the latest release (OTA)")
     multi("  update online --force      Reinstall even if already up to date")
     multi("  update from-file <path>    Apply a local .rpc archive")
+    multi("  update channel [beta|stable]  Show/switch the update channel (beta = v1.0 dev)")
     multi("")
     multi("  Full factory reinstall (ERASES everything, then installs fresh):")
     multi("    update reinstall           Wipe; restore via the Web Installer")
