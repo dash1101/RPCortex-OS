@@ -188,6 +188,9 @@ def read_key():
             c = _read1()
             if c == "H": return KEY_HOME
             if c == "F": return KEY_END
+            # PuTTY sends SS3 (ESC O C/D) for Ctrl+Left/Right; plain arrows are CSI.
+            if c == "D": return KEY_WORD_LEFT
+            if c == "C": return KEY_WORD_RIGHT
             return None
         return KEY_ESC   # bare Escape (next char wasn't [ or O)
 
