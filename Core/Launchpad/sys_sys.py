@@ -852,7 +852,7 @@ def _update_channel_cmd(rest):
     if not rest:
         info("Update channel : {}".format(_update_channel()), p="Update")
         multi("  stable  recommended releases (default)")
-        multi("  beta    v1.0 'Vela' dev builds — opt-in, may be rough")
+        multi("  beta    v1.0 'Vela' pre-release builds — opt-in")
         multi("  Switch:  update channel beta   |   update channel stable")
         return
     val = rest.strip().lower()
@@ -862,7 +862,7 @@ def _update_channel_cmd(rest):
     regedit.save('Settings.Update_Channel', val)
     ok("Update channel set to '{}'.".format(val), p="Update")
     if val == 'beta':
-        multi("  Beta builds are opt-in and may be unstable. Run 'update check'.")
+        multi("  Pre-release builds are opt-in. Run 'update check'.")
     else:
         multi("  Future checks track stable. (This won't downgrade a beta install.)")
 
@@ -1116,7 +1116,7 @@ def _update_help():
     multi("  update online              Download + install the latest release (OTA)")
     multi("  update online --force      Reinstall even if already up to date")
     multi("  update from-file <path>    Apply a local .rpc archive")
-    multi("  update channel [beta|stable]  Show/switch the update channel (beta = v1.0 dev)")
+    multi("  update channel [beta|stable]  Show/switch the update channel (beta = v1.0 pre-release)")
     multi("")
     multi("  Full factory reinstall (ERASES everything, then installs fresh):")
     multi("    update reinstall           Wipe; restore via the Web Installer")
