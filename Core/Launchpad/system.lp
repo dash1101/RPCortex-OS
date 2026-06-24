@@ -36,6 +36,7 @@ copy:/Core/Launchpad/sys_fs.py:copy
 df:/Core/Launchpad/sys_fs.py:diskfree
 du:/Core/Launchpad/sys_fs.py:du
 tree:/Core/Launchpad/sys_fs.py:tree
+sd:/Core/Launchpad/sd.py:sd
 
 # ---------------------------------------------------------------------------
 # System info / control  (sys_sys.py)
