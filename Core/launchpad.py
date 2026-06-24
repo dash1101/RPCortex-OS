@@ -998,6 +998,22 @@ def _run_ntp_on_boot():
     except Exception as e:
         error("NTP boot sync failed: {}".format(e))
 
+
+def _mount_sd_on_boot():
+    """Auto-mount a MicroSD at /sd when Features.SD_Support is true. Best-effort —
+    a missing card / driver never blocks or crashes boot."""
+    try:
+        if (regedit.read('Features.SD_Support') or 'false') != 'true':
+            return
+        import sdmgr
+        okk, msg = sdmgr.mount()
+        if okk:
+            ok("SD card {}".format(msg), p="BOOT")
+        else:
+            warn("SD auto-mount: {}".format(msg))
+    except Exception as e:
+        warn("SD auto-mount error: {}".format(e))
+
 # ---------------------------------------------------------------------------
 # Shell input  — interactive line reader with history navigation
 # ---------------------------------------------------------------------------
@@ -2235,6 +2251,7 @@ def launchpad_init(username, password, auth=True):
     try:
         _run_startup_tasks()
         _run_ntp_on_boot()   # registry-driven NTP-on-boot (after WiFi autoconnect)
+        _mount_sd_on_boot()  # registry-driven SD auto-mount (Features.SD_Support)
     except Exception as e:
         warn("Startup task runner error: {}".format(e))
 
