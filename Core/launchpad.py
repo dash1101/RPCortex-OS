@@ -1585,11 +1585,15 @@ async def _async_input(prompt):
         # the end of the line, pull the rest of the buffered printables in ONE turn
         # and insert them together. A single interactive keypress has nothing extra
         # buffered, so it falls straight through to the unchanged per-key path.
-        if (len(ch) == 1 and 0x20 <= ord(ch) < 0x7f and ed.cursor == len(ed.buf)):
+        if (len(ch) == 1 and ed.cursor == len(ed.buf)
+                and (0x20 <= ord(ch) < 0x7f or ch in ('\x7f', '\x08'))):
             extra, leftover = appkit.drain_printable()
             if extra or leftover is not None:
                 for cc in ch + extra:
-                    ed.feed(cc)
+                    if 0x20 <= ord(cc) < 0x7f:
+                        ed.feed(cc)                       # printable -> insert
+                    else:
+                        ed.feed(lineedit.BACKSPACE)       # \x7f/\x08 -> delete back
                 if leftover in ('\r', '\n'):
                     _render_async(prompt, ed, final=True)
                     line = ed.line()

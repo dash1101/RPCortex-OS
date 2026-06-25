@@ -91,11 +91,11 @@ async def read_key(timeout_ms=None, poll_ms=10):
 
 
 def drain_printable(maxn=256):
-    """SYNCHRONOUSLY pull already-buffered printable chars (no await/yield) so a
-    PASTE goes in one event-loop turn instead of one char per turn. Returns
-    (printable_str, leftover) where leftover is the first non-printable char read
-    (already consumed — caller decides: '\\r'/'\\n' = submit, else drop), or None.
-    Reads nothing extra for a lone interactive keypress (select not ready)."""
+    """SYNCHRONOUSLY pull already-buffered EDITING chars (printables + backspace,
+    no await/yield) so a paste OR a held key/backspace goes in one event-loop turn
+    instead of one char per turn. Returns (chars, leftover) where leftover is the
+    first non-editing char read (already consumed — caller: '\\r'/'\\n' = submit,
+    else drop), or None. Reads nothing for a lone keypress (select not ready)."""
     import select as _sel
     out = ''
     for _ in range(maxn):
@@ -107,7 +107,7 @@ def drain_printable(maxn=256):
             break
         if not ch:
             break
-        if 0x20 <= ord(ch) < 0x7f:
+        if (0x20 <= ord(ch) < 0x7f) or ch in ('\x7f', '\x08'):
             out += ch
         else:
             return out, ch
