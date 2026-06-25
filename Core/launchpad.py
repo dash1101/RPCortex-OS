@@ -1579,6 +1579,25 @@ async def _async_input(prompt):
         _apply_dyn_clock(True)
         idle_t0 = _ut.ticks_ms()              # any key resets the idle timer
         idle_polls = 0                        # ...and snaps the poll back to fast
+        # Batch-paste fast path: when MANY chars are already buffered (a paste, or
+        # very fast typing), draining them one-per-loop-turn is slow because each
+        # turn yields to the other coroutines. If this char is a plain printable at
+        # the end of the line, pull the rest of the buffered printables in ONE turn
+        # and insert them together. A single interactive keypress has nothing extra
+        # buffered, so it falls straight through to the unchanged per-key path.
+        if (len(ch) == 1 and 0x20 <= ord(ch) < 0x7f and ed.cursor == len(ed.buf)):
+            extra, leftover = appkit.drain_printable()
+            if extra or leftover is not None:
+                for cc in ch + extra:
+                    ed.feed(cc)
+                if leftover in ('\r', '\n'):
+                    _render_async(prompt, ed, final=True)
+                    line = ed.line()
+                    if line.strip():
+                        _history_add(line)
+                    return line
+                _render_async(prompt, ed)
+                continue
         tok = await _decode_async_key(ch)
         if tok is None:
             continue
