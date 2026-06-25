@@ -90,6 +90,30 @@ async def read_key(timeout_ms=None, poll_ms=10):
         await asyncio.sleep_ms(poll_ms)
 
 
+def drain_printable(maxn=256):
+    """SYNCHRONOUSLY pull already-buffered printable chars (no await/yield) so a
+    PASTE goes in one event-loop turn instead of one char per turn. Returns
+    (printable_str, leftover) where leftover is the first non-printable char read
+    (already consumed — caller decides: '\\r'/'\\n' = submit, else drop), or None.
+    Reads nothing extra for a lone interactive keypress (select not ready)."""
+    import select as _sel
+    out = ''
+    for _ in range(maxn):
+        try:
+            if not _sel.select([sys.stdin], [], [], 0)[0]:
+                break
+            ch = sys.stdin.read(1)
+        except Exception:
+            break
+        if not ch:
+            break
+        if 0x20 <= ord(ch) < 0x7f:
+            out += ch
+        else:
+            return out, ch
+    return out, None
+
+
 # ---------------------------------------------------------------------------
 # Async text-line prompt (shared by converted TUIs for rename/filter/etc.)
 # ---------------------------------------------------------------------------
