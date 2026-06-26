@@ -131,6 +131,50 @@ def diag(args=None):
     multi("  Platform    : {}".format(sys.platform))
 
 
+def inputstat(args=None):
+    """Async-shell input diagnostics. The async reader polls stdin for readiness;
+    if the port reports readiness COARSELY (only on a tick, not per keystroke),
+    typed bytes bunch up and the shell echoes in 'chunks' instead of char-by-char.
+    This measures it. Usage: `inputstat` to read, `inputstat reset` to zero.
+
+    Reading the numbers:
+      max drain/turn ~1      -> readiness is prompt, typing is/should be smooth.
+      max drain/turn large   -> bytes bunched between ready signals = COARSE select
+                                = the chunky-typing cause (needs the interrupt-driven
+                                reader). Type a sentence at normal speed, then re-run.
+      max empty-poll run     -> consecutive idle polls before a byte was seen."""
+    try:
+        import appkit
+        st = appkit.input_stats
+    except Exception as e:
+        error("inputstat: appkit unavailable ({})".format(e))
+        return
+    if args and args.strip().split(None, 1)[0] in ('reset', 'clear', '-r'):
+        for k in st:
+            st[k] = 0
+        appkit._empty_run = 0
+        ok("Input stats reset. Now type a sentence at normal speed, then run `inputstat`.")
+        return
+    info("=== Async input diagnostics ===")
+    drains = st.get('drains', 0)
+    avg = (st.get('total_drained', 0) / drains) if drains else 0
+    multi("  keys read        : {}".format(st.get('reads', 0)))
+    multi("  empty polls      : {}".format(st.get('empty_polls', 0)))
+    multi("  max empty run    : {}  (idle polls before a byte arrived)".format(st.get('max_run', 0)))
+    multi("  drain turns      : {}".format(drains))
+    multi("  max drain/turn   : {}  bytes coalesced in ONE loop turn".format(st.get('max_drain', 0)))
+    multi("  avg drain/turn   : {:.1f}".format(avg))
+    big = st.get('max_drain', 0)
+    if big >= 4:
+        multi("  -> \033[93mCOARSE readiness\033[0m: bytes bunch -> chunky typing. The")
+        multi("     interrupt-driven reader is the fix. Tell Claude this number.")
+    elif st.get('reads', 0) > 0:
+        multi("  -> \033[92mreadiness looks prompt\033[0m. If typing still feels chunky,")
+        multi("     a foreground service is hogging the loop (measure that instead).")
+    else:
+        multi("  (No input recorded yet. Run `inputstat reset`, type a sentence, re-run.)")
+
+
 def _cstat(label, status, detail=''):
     """Print one compatibility-check row. status in OK/WARN/FAIL/NA."""
     col = {'OK': '92', 'WARN': '93', 'FAIL': '91', 'NA': '90'}.get(status, '90')

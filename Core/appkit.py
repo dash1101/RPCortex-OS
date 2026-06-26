@@ -57,36 +57,81 @@ def shell_owns_screen():
 # ---------------------------------------------------------------------------
 # Async input
 # ---------------------------------------------------------------------------
+# A persistent poll object registered with stdin ONCE. Rebuilding
+# select([sys.stdin],[],[],0) on every poll allocates four lists per call — on the
+# hot keystroke path that is steady GC pressure (and a GC pause shows up as a
+# typing hiccup). poll().poll(0) is the readiness primitive MicroPython recommends
+# and allocates less. NOTE: poll and select share the same underlying stream ioctl,
+# so this is a GC/throughput win, not a cure for COARSE readiness (if the port only
+# refreshes the ready flag on a tick, both are equally stale — that case needs the
+# loop's interrupt-driven reader; `inputstat` below tells us which it is).
+_poll = None
+_poll_ok = None        # None = untried, True = poll usable, False = fall back to select
+
+# Input instrumentation, read by the `inputstat` command. The key signal is
+# max_drain: how many bytes drain_printable pulled in ONE event-loop turn. ~1 while
+# typing = readiness is prompt (smooth). A large value = bytes bunched between
+# ready signals = COARSE select -> chunky typing (the reported symptom).
+input_stats = {'reads': 0, 'empty_polls': 0, 'max_run': 0,
+               'drains': 0, 'max_drain': 0, 'total_drained': 0}
+_empty_run = 0
+
+
+def _stdin_ready():
+    """True if a byte is waiting on stdin. Persistent poll object, select fallback.
+    Centralizes the readiness check for read_key / drain_printable / read_escape."""
+    global _poll, _poll_ok
+    if _poll_ok is None:
+        try:
+            import select as _sel
+            _poll = _sel.poll()
+            _poll.register(sys.stdin, _sel.POLLIN)
+            _poll_ok = True
+        except Exception:
+            _poll_ok = False
+    if _poll_ok:
+        try:
+            return bool(_poll.poll(0))
+        except Exception:
+            _poll_ok = False
+    try:
+        import select as _sel
+        return bool(_sel.select([sys.stdin], [], [], 0)[0])
+    except Exception:
+        return False
+
+
 async def read_key(timeout_ms=None, poll_ms=10):
     """Await a single key from stdin WITHOUT blocking the event loop. Returns the
-    1-char string, or '' on timeout (when timeout_ms is given). Polls with a
-    zero-timeout select and yields via asyncio.sleep_ms between polls, so
+    1-char string, or '' on timeout (when timeout_ms is given). Checks readiness
+    with a non-blocking poll and yields via asyncio.sleep_ms between checks, so
     background coroutines keep running while we wait for a keypress.
 
     `poll_ms` is the idle poll interval — the worst-case latency between a *fresh*
-    keypress (after a pause) and us seeing it. Queued bytes return with no sleep
-    at all (the select sees them ready), so CONTINUOUS typing is unpaced and fast
-    on both flagships (measured 6 ms/char ESP32, 18 ms/char 2W). 10 ms balances a
-    snappy first-keypress against idle CPU; callers wanting a coarse refresh tick
+    keypress (after a pause) and us seeing it. Queued bytes return with no sleep at
+    all, so CONTINUOUS typing is unpaced. Callers wanting a coarse refresh tick
     (e.g. an app's 1 s redraw wait) can pass a larger poll_ms."""
     import asyncio
-    import select as _sel
     import utime as _ut
+    global _empty_run
     deadline = None
     if timeout_ms is not None:
         deadline = _ut.ticks_add(_ut.ticks_ms(), timeout_ms)
     while True:
-        try:
-            r = _sel.select([sys.stdin], [], [], 0)[0]
-        except Exception:
-            r = None
-        if r:
+        if _stdin_ready():
             try:
-                return sys.stdin.read(1)
+                ch = sys.stdin.read(1)
             except Exception:
-                return ''
+                ch = ''
+            input_stats['reads'] += 1
+            if _empty_run > input_stats['max_run']:
+                input_stats['max_run'] = _empty_run
+            _empty_run = 0
+            return ch
         if deadline is not None and _ut.ticks_diff(_ut.ticks_ms(), deadline) >= 0:
             return ''
+        input_stats['empty_polls'] += 1
+        _empty_run += 1
         await asyncio.sleep_ms(poll_ms)
 
 
@@ -96,11 +141,11 @@ def drain_printable(maxn=256):
     instead of one char per turn. Returns (chars, leftover) where leftover is the
     first non-editing char read (already consumed — caller: '\\r'/'\\n' = submit,
     else drop), or None. Reads nothing for a lone keypress (select not ready)."""
-    import select as _sel
     out = ''
+    leftover = None
     for _ in range(maxn):
         try:
-            if not _sel.select([sys.stdin], [], [], 0)[0]:
+            if not _stdin_ready():
                 break
             ch = sys.stdin.read(1)
         except Exception:
@@ -110,8 +155,16 @@ def drain_printable(maxn=256):
         if (0x20 <= ord(ch) < 0x7f) or ch in ('\x7f', '\x08'):
             out += ch
         else:
-            return out, ch
-    return out, None
+            leftover = ch
+            break
+    # instrumentation: bytes coalesced in this one turn (the chunkiness signal)
+    n = len(out) + (1 if leftover is not None else 0)
+    if n:
+        input_stats['drains'] += 1
+        input_stats['total_drained'] += n
+        if n > input_stats['max_drain']:
+            input_stats['max_drain'] = n
+    return out, leftover
 
 
 # ---------------------------------------------------------------------------
@@ -152,17 +205,13 @@ async def read_escape():
     Bounded and non-blocking; if nothing follows quickly it returns just '\\x1b'
     (a bare ESC press)."""
     import asyncio
-    import select as _sel
     seq = '\x1b'
     for i in range(10):
         got = False
         for _ in range(3):                     # brief grace for the next byte
-            try:
-                if _sel.select([sys.stdin], [], [], 0)[0]:
-                    got = True
-                    break
-            except Exception:
-                pass
+            if _stdin_ready():
+                got = True
+                break
             await asyncio.sleep_ms(3)
         if not got:
             break

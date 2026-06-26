@@ -4,6 +4,7 @@
 fscheck:/Core/Launchpad/sys_recovery.py:fscheck
 diag:/Core/Launchpad/sys_recovery.py:diag
 compat:/Core/Launchpad/sys_recovery.py:compat
+inputstat:/Core/Launchpad/sys_recovery.py:inputstat
 logdump:/Core/Launchpad/sys_recovery.py:logdump
 regreset:/Core/Launchpad/sys_recovery.py:regreset
 pkgdisable:/Core/Launchpad/sys_recovery.py:pkgdisable
