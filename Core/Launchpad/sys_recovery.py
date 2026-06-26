@@ -149,13 +149,32 @@ def inputstat(args=None):
     except Exception as e:
         error("inputstat: appkit unavailable ({})".format(e))
         return
-    if args and args.strip().split(None, 1)[0] in ('reset', 'clear', '-r'):
+    a = (args or '').strip().split()
+    if a and a[0] in ('reset', 'clear', '-r'):
         for k in st:
             st[k] = 0
         appkit._empty_run = 0
-        ok("Input stats reset. Now type a sentence at normal speed, then run `inputstat`.")
+        ok("Input stats reset. Type a sentence at normal speed, then run inputstat.")
+        return
+    if a and a[0] == 'stream':
+        # opt into / out of the interrupt-driven reader (Settings.Stream_Input).
+        import regedit
+        if len(a) > 1 and a[1] in ('on', 'off'):
+            regedit.save('Settings.Stream_Input', 'true' if a[1] == 'on' else 'false')
+            ok("Stream input {} — log out (or reboot) so the async shell re-reads it."
+               .format('ENABLED' if a[1] == 'on' else 'disabled'))
+        else:
+            cur = (regedit.read('Settings.Stream_Input') or 'false')
+            multi("  Settings.Stream_Input = {}".format(cur))
+            multi("  Usage: inputstat stream on | off   (interrupt-driven reader; experimental)")
         return
     info("=== Async input diagnostics ===")
+    try:
+        sm = appkit._stream_mode
+        multi("  reader mode      : {}".format(
+            'stream (interrupt-driven)' if sm else 'poll' if sm is not None else 'poll (not yet entered)'))
+    except Exception:
+        pass
     drains = st.get('drains', 0)
     avg = (st.get('total_drained', 0) / drains) if drains else 0
     multi("  keys read        : {}".format(st.get('reads', 0)))

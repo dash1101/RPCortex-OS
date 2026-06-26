@@ -101,6 +101,66 @@ def _stdin_ready():
         return False
 
 
+# --- optional interrupt-driven reader (Settings.Stream_Input, default OFF) -----
+# When the port's select() reports readiness only COARSELY (bytes bunch -> chunky
+# typing; confirm with `inputstat`), polling can't fix it. This path instead waits
+# on an asyncio.StreamReader over stdin, so the EVENT LOOP's poller (interrupt
+# driven, like the REPL) wakes us the instant a byte lands — no poll latency.
+# Gated + lazy + self-disabling: if the port can't wrap stdin as a stream it falls
+# back to polling permanently, and a hard crash trips the async-boot sentinel which
+# drops to the sync shell next boot. read(1) consumes exactly one byte, so the rest
+# stay in the FIFO and the unchanged drain_printable/read_escape see them.
+_stream_mode = None        # None = undecided, True = stream reader, False = poll
+_stream_reader = None
+
+
+def _resolve_stream_mode():
+    global _stream_mode, _stream_reader
+    if _stream_mode is not None:
+        return _stream_mode
+    on = False
+    try:
+        import regedit
+        on = (regedit.read('Settings.Stream_Input') or 'false').strip().lower() == 'true'
+    except Exception:
+        on = False
+    if on:
+        try:
+            import asyncio
+            _stream_reader = asyncio.StreamReader(sys.stdin)
+            _stream_mode = True
+        except Exception:
+            _stream_mode = False
+    else:
+        _stream_mode = False
+    return _stream_mode
+
+
+async def _stream_read_key(timeout_ms):
+    import asyncio
+    global _empty_run, _stream_mode
+    try:
+        if timeout_ms is None:
+            b = await _stream_reader.read(1)
+        else:
+            b = await asyncio.wait_for(_stream_reader.read(1), timeout_ms / 1000)
+    except asyncio.TimeoutError:
+        input_stats['empty_polls'] += 1
+        _empty_run += 1
+        return ''
+    except Exception:
+        _stream_mode = False              # misbehaved -> permanent fallback to polling
+        return ''
+    if not b:
+        return ''
+    ch = b.decode() if isinstance(b, (bytes, bytearray)) else b
+    input_stats['reads'] += 1
+    if _empty_run > input_stats['max_run']:
+        input_stats['max_run'] = _empty_run
+    _empty_run = 0
+    return ch
+
+
 async def read_key(timeout_ms=None, poll_ms=10):
     """Await a single key from stdin WITHOUT blocking the event loop. Returns the
     1-char string, or '' on timeout (when timeout_ms is given). Checks readiness
@@ -114,6 +174,8 @@ async def read_key(timeout_ms=None, poll_ms=10):
     import asyncio
     import utime as _ut
     global _empty_run
+    if _resolve_stream_mode():
+        return await _stream_read_key(timeout_ms)
     deadline = None
     if timeout_ms is not None:
         deadline = _ut.ticks_add(_ut.ticks_ms(), timeout_ms)
