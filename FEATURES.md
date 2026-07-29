@@ -7,7 +7,8 @@ truth for the running version lives in `Core/RPCortex.py` (`OS_VERSION` /
 (`Core/appkit.py`) lets a foreground app (e.g. `sysmon`) run alongside background
 services (e.g. `httpd --bg`). The v0.9.5 multitasking foundation is folded in.
 
-> This is a capabilities overview. For internals see the module docstrings; for the
+> This is a capabilities overview. For internals see the module docstrings in
+> `Core/`; for the
 > strategic roadmap see `ROADMAP.md` and [rpc.novalabs.app/roadmap](https://rpc.novalabs.app/roadmap);
 > for release notes see [rpc.novalabs.app/release](https://rpc.novalabs.app/release).
 

@@ -10,8 +10,8 @@
 # The async shell driver decodes raw terminal bytes into the logical TOKENS
 # below, calls feed(token), then renders the editor's state. This is what lets
 # the async shell reach feature parity with the proven ~300-line synchronous
-# _shell_input WITHOUT copy-pasting it (the project forbids duplicating that
-# reader). The sync reader keeps its own inline editor for now and is migrated
+# _shell_input WITHOUT copy-pasting it (duplicating that reader is off-limits —
+# one editor, two drivers). The sync reader keeps its own inline editor for now and is migrated
 # onto this class only once it is hardware-proven.
 #
 # Tokens the driver feeds (a printable character is fed as its 1-char string):
