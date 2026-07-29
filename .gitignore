@@ -51,3 +51,5 @@ Core/buildinfo.py
 
 # Generated bundled repo index (build.py)
 Core/default_repo.json
+# Local working notes — never published or shipped in a .rpc
+CLAUDE.md
