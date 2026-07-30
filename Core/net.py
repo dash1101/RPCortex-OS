@@ -405,51 +405,52 @@ def _open_connection(host, port, use_ssl, timeout=15):
     s.connect(addr)
     del addr
     if use_ssl:
-        # Drop the shell's command cache FIRST — the biggest reclaimable chunk,
-        # and what was missing when a handshake ENOMEM'd at ~81 KB free. Then two
-        # GC passes (the second catches objects the first freed).
+        # Drop the shell's command cache first — the biggest reclaimable chunk —
+        # then two GC passes (the second catches objects the first freed). This
+        # gives the handshake the best shot, but on a fragmented non-moving-GC
+        # heap it can't guarantee a contiguous block. Hardware note: this install
+        # OOM'd at ~66–86 KB free once the heap was carved up, yet worked cleanly
+        # from a fresh boot (~100 KB, low fragmentation).
         _reclaim_heap()
         gc.collect()
         gc.collect()
-        # Heap-consolidation nudge: allocate a block large enough for the TLS
-        # handshake buffer, then immediately free it.  This forces any pending
-        # GC, and leaves a fresh contiguous region for ssl.wrap_socket() to use.
-        try:
-            _pre = bytearray(12000)
-            del _pre
-        except MemoryError:
-            pass
-        gc.collect()
-        free = gc.mem_free()
-        if free < 9500:
-            raise MemoryError(
-                "Not enough RAM for TLS ({} B free, need ~9500 B). "
-                "If using Cloudflare, disable 'Always Use HTTPS' and use http:// URLs. "
-                "Or reboot and try before loading other commands.".format(free)
-            )
-        # wrap_socket can still ENOMEM even past the pre-check (the handshake
-        # allocates more than the probe). On failure, reclaim hard and retry once
-        # on a FRESH socket — the failed wrap can leave the old one unusable.
-        try:
-            s = _wrap_tls(s, host)
-        except MemoryError:
-            try:
-                s.close()
-            except Exception:
-                pass
+        # Check for the CONTIGUOUS block the handshake needs, not just total free —
+        # mem_free() can be far larger than the biggest contiguous region. If it
+        # isn't there, reclaim once more and re-probe; still not → fail with
+        # ACTIONABLE guidance instead of a cryptic ENOMEM out of wrap_socket.
+        if not _has_contiguous(_TLS_BLOCK):
             _reclaim_heap()
             gc.collect()
-            s = socket.socket()
-            try:
-                s.settimeout(timeout)
-            except Exception:
-                pass
-            ai2 = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
-            s.connect(ai2[0][-1])
-            del ai2
-            gc.collect()
+            if not _has_contiguous(_TLS_BLOCK):
+                raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free()))
+        try:
             s = _wrap_tls(s, host)
+        except MemoryError:
+            raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free()))
     return s
+
+
+_TLS_BLOCK = 10240      # ~ the contiguous heap a TLS handshake needs
+_TLS_OOM_MSG = (
+    "Not enough contiguous RAM for a secure (HTTPS) download — {} B free but the "
+    "heap is fragmented. Large downloads work from a FRESH BOOT: reboot and install "
+    "before opening other apps, or run 'freeup' first. (If using Cloudflare, "
+    "'Always Use HTTPS' forces this path — an http:// URL avoids it.)"
+)
+
+
+def _has_contiguous(n):
+    """True if a single contiguous block of n bytes can be allocated right now.
+    A non-moving GC can report plenty of total free while the largest hole is far
+    smaller, so this probes contiguity directly."""
+    import gc
+    try:
+        b = bytearray(n)
+        del b
+        gc.collect()
+        return True
+    except MemoryError:
+        return False
 
 
 def _wrap_tls(sock, host):
@@ -655,17 +656,14 @@ async def _aopen_connection(host, port, use_ssl, timeout=15):
         _reclaim_heap()          # drop the command cache before the handshake
         gc.collect()
         gc.collect()
-        try:
-            _pre = bytearray(12000)
-            del _pre
-        except MemoryError:
-            pass
-        gc.collect()
-        free = gc.mem_free()
-        if free < 9500:
-            raise MemoryError(
-                "Not enough RAM for TLS ({} B free, need ~9500 B). "
-                "Run 'freeup' or reboot, or use an http:// URL.".format(free))
+        # Probe for the contiguous handshake block (see the sync path); fail with
+        # actionable guidance rather than a cryptic ENOMEM if the heap is too
+        # fragmented even after reclaiming.
+        if not _has_contiguous(_TLS_BLOCK):
+            _reclaim_heap()
+            gc.collect()
+            if not _has_contiguous(_TLS_BLOCK):
+                raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free()))
         try:
             import ssl as _ssl
         except ImportError:
