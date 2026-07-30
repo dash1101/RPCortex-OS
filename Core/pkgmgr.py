@@ -56,63 +56,127 @@ def _u16(data, off):
     return data[off] | (data[off+1] << 8)
 
 
-def _extract_zip_entries(data):
-    """Yield (filename, bytes) pairs from a ZIP archive."""
-    offset = 0
-    length = len(data)
+# NOTE: the previous whole-archive reader (_extract_zip_entries, which sliced every
+# entry out of an in-RAM copy of the .pkg) was removed — it materialised the whole
+# archive plus every entry at once and OOM'd on a fragmented heap. All installs now
+# stream from the file via the helpers below.
 
-    while offset < length - 4:
-        sig = data[offset:offset+4]
 
-        if sig == b'PK\x01\x02' or sig == b'PK\x05\x06':
+def _fskip(fh, n):
+    """Skip n bytes forward, seeking when possible, reading when not."""
+    if n <= 0:
+        return
+    try:
+        fh.seek(n, 1)
+    except Exception:
+        while n > 0:
+            chunk = min(n, 256)
+            if not fh.read(chunk):
+                break
+            n -= chunk
+
+
+def _zip_entries_from_file(fh, file_size):
+    """Read a ZIP's Central Directory and return [(fname, method, comp_size,
+    local_off)]. The CD always carries the accurate comp_size (a Local File
+    Header can read 0 when the data-descriptor bit is set), and reading only the
+    directory keeps this cheap — no file bytes are held. Returns None if the
+    archive has no locatable EOCD. Mirrors the rpc_install .rpc reader."""
+    search_off = max(0, file_size - 512)
+    fh.seek(search_off)
+    tail = fh.read(file_size - search_off)
+    pos = tail.rfind(b'PK\x05\x06')
+    if pos == -1:
+        return None
+    eocd = tail[pos:pos + 22]
+    if len(eocd) < 22:
+        return None
+    cd_count = _u16(eocd, 10)
+    cd_off = _u32(eocd, 16)
+    entries = []
+    fh.seek(cd_off)
+    for _ in range(cd_count):
+        if fh.read(4) != b'PK\x01\x02':
             break
+        cdr = fh.read(42)
+        if len(cdr) < 42:
+            break
+        method = _u16(cdr, 6)
+        comp_size = _u32(cdr, 16)
+        fname_len = _u16(cdr, 24)
+        extra_len = _u16(cdr, 26)
+        comment_len = _u16(cdr, 28)
+        local_off = _u32(cdr, 38)
+        try:
+            fname = fh.read(fname_len).decode('utf-8')
+        except Exception:
+            fh.read(fname_len)
+            fname = ''
+        _fskip(fh, extra_len + comment_len)
+        entries.append((fname, method, comp_size, local_off))
+    return entries
 
-        if sig != b'PK\x03\x04':
-            offset += 1
-            continue
 
-        comp_method = _u16(data, offset + 8)
-        comp_size   = _u32(data, offset + 18)
-        fname_len   = _u16(data, offset + 26)
-        extra_len   = _u16(data, offset + 28)
+def _read_one_entry(fh, method, comp_size, local_off):
+    """Read a single (small) ZIP entry fully into RAM — used only for
+    package.cfg, which is a few hundred bytes. Seeks via the Local File Header."""
+    fh.seek(local_off)
+    lfh = fh.read(30)
+    if len(lfh) < 30 or lfh[:4] != b'PK\x03\x04':
+        return None
+    _fskip(fh, _u16(lfh, 26) + _u16(lfh, 28))
+    raw = fh.read(comp_size)
+    if method == 0:
+        return raw
+    return _inflate(raw)
 
-        fname    = data[offset+30 : offset+30+fname_len].decode('utf-8')
-        data_off = offset + 30 + fname_len + extra_len
-        raw      = data[data_off : data_off + comp_size]
 
-        if comp_method == 0:
-            file_data = raw
-        elif comp_method == 8:
-            file_data = None
-            # Attempt 1: zlib (MicroPython v1.19+)
-            try:
-                import zlib
-                file_data = zlib.decompress(raw, -15)
-            except ImportError:
-                pass
-            except Exception as e:
-                error("zlib decompress error '{}': {}".format(fname, e))
-            # Attempt 2: uzlib (older MicroPython)
-            if file_data is None:
-                try:
-                    import uzlib
-                    file_data = uzlib.decompress(raw, -15)
-                except ImportError:
-                    pass
-                except Exception as e:
-                    error("uzlib decompress error '{}': {}".format(fname, e))
-            # Neither available
-            if file_data is None:
-                error("Cannot decompress '{}' — no zlib/uzlib module.".format(fname))
-                error("Rebuild with stored compression: python repo/make_pkg.py <dir>")
-        else:
-            warn("Skipping '{}' — unsupported compression {}".format(fname, comp_method))
-            file_data = None
+def _inflate(raw):
+    """DEFLATE fallback (method 8). .pkg files are ZIP_STORED, so this is rare.
+    zlib and uzlib are tried INDEPENDENTLY — a zlib decompress failure must still
+    fall through to uzlib (CLAUDE.md records that independence as a past fix)."""
+    try:
+        import zlib
+        return zlib.decompress(raw, -15)
+    except Exception:
+        pass
+    try:
+        import uzlib
+        return uzlib.decompress(raw, -15)
+    except Exception:
+        return None
 
-        if file_data is not None:
-            yield fname, file_data
 
-        offset = data_off + comp_size
+def _stream_entry_to_file(fh, method, comp_size, local_off, dest):
+    """Extract one ZIP entry directly to `dest`. STORED entries stream input ->
+    output in 512-byte chunks, so a big file is NEVER held in one contiguous
+    allocation — that contiguous alloc is what failed on a fragmented heap
+    ('memory allocation failed, allocating N bytes' during pkg install). Returns
+    True on success."""
+    fh.seek(local_off)
+    lfh = fh.read(30)
+    if len(lfh) < 30 or lfh[:4] != b'PK\x03\x04':
+        return False
+    _fskip(fh, _u16(lfh, 26) + _u16(lfh, 28))
+
+    if method == 0:
+        remaining = comp_size
+        with open(dest, 'wb') as out:
+            while remaining > 0:
+                chunk = fh.read(512 if remaining > 512 else remaining)
+                if not chunk:
+                    break
+                out.write(chunk)
+                remaining -= len(chunk)
+        return True
+
+    # DEFLATE — read + decompress the whole entry (rare for a .pkg).
+    data = _inflate(fh.read(comp_size))
+    if data is None:
+        return False
+    with open(dest, 'wb') as out:
+        out.write(data)
+    return True
 
 # ---------------------------------------------------------------------------
 # Filesystem helpers
@@ -519,14 +583,7 @@ def install(archive_path, force=False):
             pass
 
     info("Reading archive: {}".format(archive_path))
-    try:
-        with open(archive_path, 'rb') as f:
-            data = f.read()
-    except OSError as e:
-        error("Cannot read '{}': {}".format(archive_path, e))
-        return False
-
-    return _install_from_data(data, force=force)
+    return _install_from_file(archive_path, force=force)
 
 
 def _find_installed_dir(pkg_name):
@@ -545,27 +602,10 @@ def _find_installed_dir(pkg_name):
     return None
 
 
-def _install_from_data(data, force=False):
-    """Extract and install package from raw ZIP bytes."""
-    entries = list(_extract_zip_entries(data))
-    if not entries:
-        error("Archive appears to be empty or invalid.")
-        return False
-
-    # Find package.cfg
-    cfg_data  = None
-    cfg_entry = None
-    for fname, fdata in entries:
-        if fname.endswith('package.cfg') and not fname.endswith('/'):
-            cfg_data  = fdata.decode('utf-8') if isinstance(fdata, (bytes, bytearray)) else fdata
-            cfg_entry = fname
-            break
-
-    if cfg_data is None:
-        error("No package.cfg found in archive.")
-        return False
-
-    meta     = _parse_cfg(cfg_data)
+def _prepare_install(meta, cfg_entry, force):
+    """Shared pre-extraction logic: print metadata, handle an existing install
+    (consolidate/reinstall/refuse), make the target dir, and return
+    (pkg_dir, prefix, proceed). proceed is False when the install should stop."""
     pkg_name = meta.get('pkg.name', 'Unknown')
     pkg_dir  = meta.get('pkg.dir', PACKAGES_DIR + '/' + pkg_name)
     pkg_ver  = meta.get('pkg.ver', '?')
@@ -595,7 +635,7 @@ def _install_from_data(data, force=False):
             warn("'{}' is already installed.".format(pkg_name))
             warn("Reinstall with: pkg reinstall {}  (or: pkg remove {})".format(
                 pkg_name, pkg_name))
-            return False
+            return pkg_dir, '', False
 
     # Strip top-level ZIP directory prefix
     prefix = ''
@@ -604,35 +644,121 @@ def _install_from_data(data, force=False):
 
     ok("Extracting to '{}'...".format(pkg_dir))
     _makedirs(pkg_dir)
+    return pkg_dir, prefix, True
 
-    for fname, fdata in entries:
-        rel = fname[len(prefix):] if fname.startswith(prefix) else fname
-        if not rel:
-            continue
 
-        full_path = pkg_dir.rstrip('/') + '/' + rel
+def _install_from_file(archive_path, force=False):
+    """Install a package by STREAMING each file out of the .pkg on disk, so no
+    file (and not the whole archive) is ever held in one contiguous allocation.
 
-        if rel.endswith('/'):
-            _makedirs(full_path.rstrip('/'))
-            continue
-
-        parent = '/'.join(full_path.split('/')[:-1])
-        if parent:
-            _makedirs(parent)
-
+    The previous path read the whole archive into RAM and materialised every
+    entry as bytes at once; on a fragmented heap the largest slice failed
+    ('memory allocation failed, allocating N bytes'). This reads only the ZIP
+    directory + the small package.cfg into RAM, then copies every entry to flash
+    in 512-byte chunks — the same fix the .rpc updater already uses."""
+    import gc
+    try:
+        fh = open(archive_path, 'rb')
+    except OSError as e:
+        error("Cannot read '{}': {}".format(archive_path, e))
+        return False
+    try:
         try:
-            with open(full_path, 'wb') as f:
-                f.write(fdata if isinstance(fdata, (bytes, bytearray)) else fdata.encode())
-            info("  + {}".format(full_path))
-        except OSError as e:
-            error("  Failed to write '{}': {}".format(full_path, e))
+            size = uos.stat(archive_path)[6]
+        except OSError:
+            fh.seek(0, 2)
+            size = fh.tell()
 
-    cmd_entry = meta.get('pkg.cmd')
-    if cmd_entry:
-        _register_command(cmd_entry)
+        entries = _zip_entries_from_file(fh, size)
+        if not entries:
+            error("Archive appears to be empty or invalid.")
+            return False
 
-    ok("Package '{}' v{} installed.".format(pkg_name, pkg_ver))
-    return True
+        # Read only package.cfg into RAM (a few hundred bytes) for the metadata.
+        cfg_entry = None
+        meta = None
+        for fname, method, comp_size, local_off in entries:
+            if fname.endswith('package.cfg') and not fname.endswith('/'):
+                raw = _read_one_entry(fh, method, comp_size, local_off)
+                if raw is not None:
+                    txt = raw.decode('utf-8') if isinstance(raw, (bytes, bytearray)) else raw
+                    meta = _parse_cfg(txt)
+                    cfg_entry = fname
+                break
+        if meta is None:
+            error("No package.cfg found in archive.")
+            return False
+
+        pkg_dir, prefix, proceed = _prepare_install(meta, cfg_entry, force)
+        if not proceed:
+            return False
+
+        n_ok = 0
+        n_fail = 0
+        for fname, method, comp_size, local_off in entries:
+            rel = fname[len(prefix):] if fname.startswith(prefix) else fname
+            if not rel:
+                continue
+            full_path = pkg_dir.rstrip('/') + '/' + rel
+            if rel.endswith('/'):
+                _makedirs(full_path.rstrip('/'))
+                continue
+            parent = '/'.join(full_path.split('/')[:-1])
+            if parent:
+                _makedirs(parent)
+            try:
+                if _stream_entry_to_file(fh, method, comp_size, local_off, full_path):
+                    n_ok += 1
+                    info("  + {}".format(full_path))
+                else:
+                    n_fail += 1
+                    error("  Failed to extract '{}'".format(full_path))
+            except OSError as e:
+                n_fail += 1
+                error("  Failed to write '{}': {}".format(full_path, e))
+            gc.collect()   # release the 512-byte churn between files
+
+        pkg_name = meta.get('pkg.name', 'Unknown')
+        pkg_ver = meta.get('pkg.ver', '?')
+
+        # Only register the shell command if EVERY file landed. A half-extracted
+        # package that still gets a command entry fails later as a confusing
+        # launch error instead of here at install time — so on any file error,
+        # register nothing and report failure.
+        if n_fail:
+            error("Package '{}' failed: {} file(s) did not extract."
+                  .format(pkg_name, n_fail))
+            error("Not registering its command. Free space/RAM and reinstall.")
+            return False
+
+        cmd_entry = meta.get('pkg.cmd')
+        if cmd_entry:
+            _register_command(cmd_entry)
+        ok("Package '{}' v{} installed.".format(pkg_name, pkg_ver))
+        return True
+    finally:
+        fh.close()
+
+
+def _install_from_data(data, force=False):
+    """Compatibility shim for callers that only hold raw ZIP bytes: spill to a
+    temp file and use the streamed installer, so there is ONE extraction path and
+    the write side is always memory-safe. (All in-tree callers pass a path.)"""
+    tmp = PKG_BASE + '/tmp_frombytes.pkg'
+    _ensure_dirs()
+    try:
+        with open(tmp, 'wb') as f:
+            f.write(data)
+    except OSError as e:
+        error("Cannot stage archive: {}".format(e))
+        return False
+    try:
+        return _install_from_file(tmp, force=force)
+    finally:
+        try:
+            uos.remove(tmp)
+        except OSError:
+            pass
 
 # ---------------------------------------------------------------------------
 # Install — online by name
@@ -691,10 +817,9 @@ def install_online(name, force=False):
     import gc
     gc.collect()
     try:
-        with open(tmp, 'rb') as f:
-            data = f.read()
-        gc.collect()
-        result = _install_from_data(data, force=force)
+        # Stream straight from the downloaded file — never read it whole into
+        # RAM, which is what OOM'd on a fragmented heap for a big package.
+        result = _install_from_file(tmp, force=force)
     except Exception as e:
         error("Install failed: {}".format(e))
         result = False
@@ -767,9 +892,7 @@ def upgrade():
                 try:
                     status, size = net.wget(avail['url'], dest=tmp, verbose=False)
                     if status == 200:
-                        with open(tmp, 'rb') as f:
-                            data = f.read()
-                        if _install_from_data(data):
+                        if _install_from_file(tmp):
                             upgraded += 1
                 except Exception as e:
                     error("Upgrade of '{}' failed: {}".format(name, e))
