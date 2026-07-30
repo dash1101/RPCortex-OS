@@ -340,12 +340,27 @@ def _crit_rawrepl(args=None):
     request_repl()
 
 
+def free_heap():
+    """Reclaim the command cache and collect; return free bytes afterward.
+
+    The command cache holds imported command modules / exec scopes and is the
+    single biggest reclaimable chunk on a working device (freeup reclaims it).
+    Exposed as a plain function so low-level code — e.g. net.py before a TLS
+    handshake — can reach it via sys.modules['Core.launchpad'].free_heap() and
+    get the most contiguous heap possible. Safe to call mid-command: a running
+    command's module stays alive via its call-stack frame, so only OTHER cached
+    scopes are dropped; the next command simply re-imports (cheap for .mpy)."""
+    import gc as _gc
+    _cmd_cache.clear()
+    _gc.collect()
+    _gc.collect()
+    return _gc.mem_free()
+
+
 def _crit_freeup(args=None):
     import gc as _gc
     before = _gc.mem_free()
-    _cmd_cache.clear()
-    _gc.collect()
-    after = _gc.mem_free()
+    after = free_heap()
     ok("Memory freed: {} KB -> {} KB free  (+{} KB)".format(
         before // 1024, after // 1024, (after - before) // 1024))
 

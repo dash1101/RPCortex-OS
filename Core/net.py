@@ -363,6 +363,31 @@ def _parse_url(url):
     return host, port, path, use_ssl
 
 
+def _reclaim_heap():
+    """Best-effort maximum free heap before a TLS handshake.
+
+    mem_free() passing a small nudge is NOT enough on a fragmented device — a
+    handshake failed on hardware with ~81 KB free because the reclaimable
+    command cache was still resident. This drops that cache (the big chunk) via
+    the shell's free_heap(), which directly frees the room the handshake needs.
+    No-op if the shell module isn't loaded (recovery / headless). Returns free
+    bytes, or 0 if unknown."""
+    import gc
+    try:
+        import sys
+        lp = sys.modules.get('Core.launchpad')
+        if lp is not None and hasattr(lp, 'free_heap'):
+            return lp.free_heap()
+    except Exception:
+        pass
+    try:
+        gc.collect()
+        gc.collect()
+        return gc.mem_free()
+    except Exception:
+        return 0
+
+
 def _open_connection(host, port, use_ssl, timeout=15):
     """Open a TCP socket, optionally wrapped with TLS. Returns the socket."""
     import socket
@@ -380,7 +405,10 @@ def _open_connection(host, port, use_ssl, timeout=15):
     s.connect(addr)
     del addr
     if use_ssl:
-        # Two GC passes — second pass catches objects freed by first pass.
+        # Drop the shell's command cache FIRST — the biggest reclaimable chunk,
+        # and what was missing when a handshake ENOMEM'd at ~81 KB free. Then two
+        # GC passes (the second catches objects the first freed).
+        _reclaim_heap()
         gc.collect()
         gc.collect()
         # Heap-consolidation nudge: allocate a block large enough for the TLS
@@ -399,14 +427,41 @@ def _open_connection(host, port, use_ssl, timeout=15):
                 "If using Cloudflare, disable 'Always Use HTTPS' and use http:// URLs. "
                 "Or reboot and try before loading other commands.".format(free)
             )
+        # wrap_socket can still ENOMEM even past the pre-check (the handshake
+        # allocates more than the probe). On failure, reclaim hard and retry once
+        # on a FRESH socket — the failed wrap can leave the old one unusable.
         try:
-            import ssl
-            s = ssl.wrap_socket(s, server_hostname=host)
-        except ImportError:
-            import ussl
+            s = _wrap_tls(s, host)
+        except MemoryError:
+            try:
+                s.close()
+            except Exception:
+                pass
+            _reclaim_heap()
             gc.collect()
-            s = ussl.wrap_socket(s, server_hostname=host)
+            s = socket.socket()
+            try:
+                s.settimeout(timeout)
+            except Exception:
+                pass
+            ai2 = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+            s.connect(ai2[0][-1])
+            del ai2
+            gc.collect()
+            s = _wrap_tls(s, host)
     return s
+
+
+def _wrap_tls(sock, host):
+    """ssl/ussl wrap with the ssl->ussl fallback in one place."""
+    try:
+        import ssl
+        return ssl.wrap_socket(sock, server_hostname=host)
+    except ImportError:
+        import ussl
+        import gc
+        gc.collect()
+        return ussl.wrap_socket(sock, server_hostname=host)
 
 
 def _read_headers(s, chunk_size):
@@ -597,6 +652,7 @@ async def _aopen_connection(host, port, use_ssl, timeout=15):
     import gc
     gc.collect()
     if use_ssl:
+        _reclaim_heap()          # drop the command cache before the handshake
         gc.collect()
         gc.collect()
         try:
