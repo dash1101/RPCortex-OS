@@ -44,6 +44,7 @@ sd:/Core/Launchpad/sd.py:sd
 reboot:/Core/Launchpad/sys_sys.py:reboot
 sreboot:/Core/Launchpad/sys_sys.py:sreboot
 softreset:/Core/Launchpad/sys_sys.py:sreboot
+safeboot:/Core/Launchpad/sys_sys.py:safeboot
 sysinfo:/Core/Launchpad/sys_sys.py:sysinfo
 uname:/Core/Launchpad/sys_sys.py:ver
 meminfo:/Core/Launchpad/sys_sys.py:meminfo

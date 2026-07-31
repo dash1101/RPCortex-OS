@@ -65,6 +65,24 @@ def sreboot(args=None):
     _reboot('soft_reset')
 
 
+def safeboot(args=None):
+    """Reboot into a maintenance shell with NO background services running, so the
+    heap is free enough for a memory-heavy OS update. Background apps (e.g. the Nova
+    GUI) hold a lot of RAM, and a full heap can't finish a TLS-backed download.
+    Sets a one-shot flag that launchpad reads at boot to skip service seeding; a
+    normal reboot afterwards restores services."""
+    info("Safe boot: rebooting without background services...")
+    multi("  Once it's up, run your OS update, then reboot normally to restore services.")
+    from RPCortex import close_session_log
+    close_session_log()
+    try:
+        regedit.save("Settings.Safe_Boot", "1")   # one-shot; cleared by launchpad at boot
+        regedit.save("Settings.Startup", "0")      # clean shutdown sentinel
+    except Exception:
+        pass
+    _reboot('soft_reset')
+
+
 def uptime(args=None):
     ms = utime.ticks_ms()
     s  = ms // 1000
@@ -1465,6 +1483,7 @@ def help(args=None):
             'dirname':      'dirname <path>      Parent directory of a path',
             'reboot':       'reboot              Hard restart',
             'sreboot':      'sreboot             Soft reboot',
+            'safeboot':     'safeboot            Reboot with no bg services (free RAM to update)',
             'softreset':    'softreset           Alias for sreboot',
             'rawrepl':      'rawrepl             Exit OS to MicroPython REPL',
             'recovery':     'recovery            Enter recovery shell (no auth)',

@@ -1829,10 +1829,25 @@ def _enter_async_shell(username):
         # Seed background services (services.cfg) into the desired set ONCE for
         # this session, before the loop starts. register_service records them now
         # (sync context, no loop yet); the supervisor spawns them on entry.
+        #
+        # Safe boot (one-shot): `safeboot` sets Settings.Safe_Boot before rebooting
+        # so this session starts with NO services — background apps (e.g. the Nova
+        # GUI) hold a lot of RAM, and a heap that full can't complete a TLS-backed
+        # OS update. Skipping them frees the heap for `update online`; the flag is
+        # cleared here so the next normal boot restores services.
         try:
-            _seed_services()
+            import regedit as _re
+            if str(_re.read('Settings.Safe_Boot') or '') == '1':
+                _re.save('Settings.Safe_Boot', '')
+                warn("Safe boot: background services skipped — extra RAM for maintenance.")
+                warn("Run your OS update now, then reboot to restore services.")
+            else:
+                _seed_services()
         except Exception:
-            pass
+            try:
+                _seed_services()
+            except Exception:
+                pass
         # Safety net for ports that ignore kbd_intr: if a KeyboardInterrupt still
         # unwinds asyncio.run, reset the loop and re-enter — the supervisor's
         # finally won't have run, so drop the dead loop's service handles and let
