@@ -128,9 +128,17 @@ def _radios_down():
 # must allocate in between, which is why release_reserve() is called immediately
 # before the wrap and nowhere else.
 #
-# Gated by Settings.TLS_Reserve — 'off' (default), 'auto' (arm only when there is
-# comfortable headroom), or 'on'. It costs its own size in permanent headroom, so
-# it stays off until it has been confirmed on hardware.
+# Gated by Settings.TLS_Reserve — 'auto' (the default), 'on', or 'off'.
+#
+# 'auto' arms the reserve only when there is at least 4x its size free at boot,
+# so on a device that is already short of memory it declines and changes nothing.
+# That is what makes it safe as a default: the failure mode of arming is using
+# 17 KB you did not have, and the check makes that impossible.
+#
+# It defaults on because the alternative is worse. The pre-handshake check asks
+# for the real 16.7 KB now, so a fragmented device fails the check outright and
+# an update reports "Low RAM" instead of running — reserving the block up front,
+# while the heap is clean, is the only thing that reliably prevents that.
 TLS_RESERVE_BYTES = 16384 + 1024      # input buffer + record overhead + slack
 _tls_reserve = None
 
@@ -143,10 +151,10 @@ def arm_reserve(size=None, force=False):
     global _tls_reserve
     if _tls_reserve is not None:
         return True
-    mode = 'off'
+    mode = 'auto'
     try:
         import regedit
-        mode = str(regedit.read('Settings.TLS_Reserve') or 'off').strip().lower()
+        mode = str(regedit.read('Settings.TLS_Reserve') or 'auto').strip().lower()
     except Exception:
         pass
     if not force and mode not in ('on', 'auto', 'true', '1'):
