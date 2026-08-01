@@ -269,7 +269,17 @@ def _apply_boot_clock():
     try:
         hz = int(float(boot_clock.replace("MHz", "").strip()) * 1_000_000)
     except Exception:
-        hz = 125_000_000  # stock RP2040 speed as safe fallback
+        # Nothing configured: use the platform's preferred clock rather than the
+        # old flat 125 MHz fallback, which actually SLOWED an unconfigured RP2350
+        # (it boots at 150 natively and is happy at 200).
+        hz = 0
+        try:
+            import hwinfo
+            hz = hwinfo.default_clock_mhz() * 1_000_000
+        except Exception:
+            hz = 0
+        if not hz:
+            hz = 125_000_000  # stock RP2040 speed as the last-resort fallback
     regedit.save("Settings.Startup", "7")  # OC boot crash sentinel
     try:
         machine.freq(hz)

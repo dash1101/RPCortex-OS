@@ -6,6 +6,7 @@
 # Lang: MicroPython, English
 
 import sys
+import os
 
 try:
     import machine
@@ -68,6 +69,26 @@ def clock_range_mhz():
     if p == 'esp32':
         return (80, 240)
     return (80, 160)
+
+
+def default_clock_mhz():
+    """Preferred boot clock for this platform when nothing is configured, or 0 to
+    leave the port's default alone.
+
+    RP2350 (Pico 2 / 2 W) boots at 150 MHz but is specified well above that and is
+    stable at 200 — worth taking, since the UI, PIO work and the shared event loop
+    all benefit. RP2040 is left at its own default (its flash timing is tighter and
+    the gain is smaller). Any registry clock key still overrides this."""
+    p = sys.platform
+    if p == 'rp2':
+        try:
+            mach = (os.uname().machine or '').lower()
+        except Exception:
+            mach = ''
+        if 'rp2350' in mach:
+            return 200
+        return 0
+    return 0
 
 
 def dyn_floor_mhz():
