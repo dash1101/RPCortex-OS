@@ -255,7 +255,7 @@ def check_oc():
         core.warn("System will continue at default clock speed.", p="POST")
 
 
-def _apply_boot_clock():
+def _apply_boot_clock(default_only=False):
     """
     Apply the boot clock on startup.
     Reads Hardware.Boot_Clock first; falls back to Hardware.Max_Clock.
@@ -263,9 +263,14 @@ def _apply_boot_clock():
     If the device crashes here, the sentinel survives the reset and POST
     will detect it on the next boot, disabling OC_On_Boot automatically.
     """
-    boot_clock = regedit.read("Hardware.Boot_Clock") or ""
-    if not boot_clock.strip():
-        boot_clock = regedit.read("Hardware.Max_Clock") or ""
+    boot_clock = ""
+    if not default_only:
+        boot_clock = regedit.read("Hardware.Boot_Clock") or ""
+        if not boot_clock.strip():
+            boot_clock = regedit.read("Hardware.Max_Clock") or ""
+    else:
+        # default_only: ignore the OC keys, but a user-set Boot_Clock still wins.
+        boot_clock = regedit.read("Hardware.Boot_Clock") or ""
     try:
         hz = int(float(boot_clock.replace("MHz", "").strip()) * 1_000_000)
     except Exception:
@@ -279,6 +284,10 @@ def _apply_boot_clock():
         except Exception:
             hz = 0
         if not hz:
+            if default_only:
+                _vinfo("CPU at {} MHz (platform default).".format(
+                    machine.freq() // 1_000_000), p="POST")
+                return
             hz = 125_000_000  # stock RP2040 speed as the last-resort fallback
     regedit.save("Settings.Startup", "7")  # OC boot crash sentinel
     try:
@@ -388,8 +397,12 @@ def script():
     if regedit.read("Settings.OC_On_Boot") == "true":
         _apply_boot_clock()
     else:
-        _vinfo("CPU at {} MHz. Use 'pulse boot <MHz>' to set a boot clock.".format(
-            machine.freq() // 1_000_000), p="POST")
+        # Even without OC_On_Boot, take the platform's preferred clock — an RP2350
+        # otherwise idles at the port default (150 MHz) when it runs comfortably at
+        # 200, which is free speed for the UI, PIO work and the shared loop. Still
+        # sentinel-protected, so a clock that won't boot is backed out on the next
+        # start; a user-set Hardware.Boot_Clock always wins over this.
+        _apply_boot_clock(default_only=True)
 
     # --- Critical file checks ---
     _vinfo("Checking core files...", p="POST")
