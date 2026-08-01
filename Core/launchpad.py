@@ -1652,15 +1652,49 @@ async def _async_input(prompt):
             _render_async(prompt, ed)
 
 
+AUTO_RECLAIM_FLOOR = 49152     # below this much free, drop the command cache
+
+
+def _auto_reclaim():
+    """Drop the command cache when free memory gets low, without being asked.
+
+    Every distinct command imports its module and the cache keeps it, so a device
+    just gets tighter the longer you use the shell: eighteen commands took a test
+    board from 149 KB free to 72 KB, with the largest block down to 16 KB. That
+    is recoverable with `freeup` — but only if you know to type it, and the first
+    sign that you should is usually something failing.
+
+    A running command's own module stays alive on the call stack, so this is safe
+    at any moment; the next command simply re-imports, which is cheap for a .mpy.
+    Returns True if it reclaimed."""
+    try:
+        import gc as _gc
+        if _gc.mem_free() >= AUTO_RECLAIM_FLOOR:
+            return False
+        if not _cmd_cache:
+            return False
+        free_heap()
+        return True
+    except Exception:
+        return False
+
+
 async def _scheduler_coro():
     """Background task scheduler — runs while the async shell is open. Gated by
     the same Apps.Task_Background master switch as Track A, so background tasks
-    are one control; async mode just lets them fire even while you type."""
+    are one control; async mode just lets them fire even while you type.
+
+    Also carries the low-memory auto-reclaim: it is the one thing already ticking
+    steadily whether or not anything else is running."""
     import asyncio
     while _shell_state.get('running'):
         try:
             if _bg_tasks_armed():
                 _run_due_tasks(restore=_shell_state.get('async_line', ''))
+        except Exception:
+            pass
+        try:
+            _auto_reclaim()
         except Exception:
             pass
         await asyncio.sleep_ms(250)
