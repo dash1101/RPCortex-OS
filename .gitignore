@@ -53,3 +53,4 @@ Core/buildinfo.py
 Core/default_repo.json
 # Local working notes — never published or shipped in a .rpc
 CLAUDE.md
+tools/stress.log
