@@ -64,9 +64,23 @@ class Dev:
         self.checks = 0
 
     def send(self, cmd, wait=4.0):
+        """Send one command and read its reply.
+
+        Drains first. A background service writing to serial leaves bytes in the
+        buffer, and without the drain each read picks up the PREVIOUS command's
+        tail — the replies walk one behind and the run looks hung when the device
+        is perfectly responsive. That cost a whole test run to work out."""
+        self.s.reset_input_buffer()
         self.s.write(cmd.encode() + b'\r')
         time.sleep(wait)
-        return ANSI.sub('', self.s.read(60000).decode('utf-8', 'replace'))
+        out = ANSI.sub('', self.s.read(60000).decode('utf-8', 'replace'))
+        # If the tail is not a prompt the device is still talking; give it more.
+        for _ in range(6):
+            if PROMPT in out[-40:] or '>' in out[-6:]:
+                break
+            time.sleep(1.5)
+            out += ANSI.sub('', self.s.read(60000).decode('utf-8', 'replace'))
+        return out
 
     def at_repl(self):
         """True if we are at the BARE MicroPython REPL rather than the shell.

@@ -1652,29 +1652,46 @@ async def _async_input(prompt):
             _render_async(prompt, ed)
 
 
-AUTO_RECLAIM_FLOOR = 49152     # below this much free, drop the command cache
+AUTO_RECLAIM_FLOOR = 49152     # below this much FREE, drop the command cache
+AUTO_RECLAIM_BLOCK = 20480     # ...or below this much CONTIGUOUS
 
 
 def _auto_reclaim():
-    """Drop the command cache when free memory gets low, without being asked.
+    """Drop the command cache when memory gets low, without being asked.
 
     Every distinct command imports its module and the cache keeps it, so a device
     just gets tighter the longer you use the shell: eighteen commands took a test
-    board from 149 KB free to 72 KB, with the largest block down to 16 KB. That
-    is recoverable with `freeup` — but only if you know to type it, and the first
-    sign that you should is usually something failing.
+    board from 149 KB free to 72 KB. That is recoverable with `freeup` — but only
+    if you know to type it, and the first sign that you should is usually
+    something failing.
 
-    A running command's own module stays alive on the call stack, so this is safe
-    at any moment; the next command simply re-imports, which is cheap for a .mpy.
+    TWO triggers, because total free is not the number that matters. A board
+    measured 83 KB free with a LARGEST BLOCK of 15 KB: comfortable by the free
+    figure, yet unable to start a TLS handshake, which needs ~17 KB unbroken. A
+    check on free alone sits idle through exactly the case worth acting on. The
+    contiguity probe only runs when free is already lowish, so the common path
+    stays one cheap integer compare.
+
+    A running command's own module stays alive on its call-stack frame, so this
+    is safe at any moment; the next command simply re-imports, cheap for a .mpy.
     Returns True if it reclaimed."""
     try:
         import gc as _gc
-        if _gc.mem_free() >= AUTO_RECLAIM_FLOOR:
-            return False
         if not _cmd_cache:
             return False
-        free_heap()
-        return True
+        free = _gc.mem_free()
+        if free < AUTO_RECLAIM_FLOOR:
+            free_heap()
+            return True
+        if free < AUTO_RECLAIM_FLOOR * 3:
+            # Cheap-ish contiguity probe: one allocation attempt, not a search.
+            try:
+                _b = bytearray(AUTO_RECLAIM_BLOCK)
+                del _b
+            except MemoryError:
+                free_heap()
+                return True
+        return False
     except Exception:
         return False
 
