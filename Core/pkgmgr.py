@@ -692,6 +692,24 @@ def _prepare_install(meta, cfg_entry, force):
     return pkg_dir, prefix, True
 
 
+def _check_storage(what):
+    """Guard onboard flash before a write-heavy op. Returns True to proceed.
+    Refuses at >=98% used (keeps ~2% for OS updates), warns at >=95%."""
+    try:
+        from RPCortex import storage_state
+        pct, level = storage_state('/')
+    except Exception:
+        return True
+    if level == 'block':
+        error("Storage {}% full — refusing to {}.".format(pct, what))
+        error("Free space first (files / rm, or 'pkg remove'); ~2% is kept for updates.")
+        return False
+    if level == 'warn':
+        warn("Storage {}% full — very low. Continuing to {}, but free space soon;"
+             " updates need headroom.".format(pct, what))
+    return True
+
+
 def _install_from_file(archive_path, force=False):
     """Install a package by STREAMING each file out of the .pkg on disk, so no
     file (and not the whole archive) is ever held in one contiguous allocation.
@@ -734,6 +752,8 @@ def _install_from_file(archive_path, force=False):
             error("No package.cfg found in archive.")
             return False
 
+        if not _check_storage("install this package"):   # before _prepare_install makes dirs
+            return False
         pkg_dir, prefix, proceed = _prepare_install(meta, cfg_entry, force)
         if not proceed:
             return False
@@ -831,6 +851,9 @@ def install_online(name, force=False):
 
     if not pkg_url:
         error("'{}' not found in repo cache. Run 'pkg update' first.".format(name))
+        return False
+
+    if not _check_storage("download and install"):   # don't even download if we can't install
         return False
 
     info("Found '{}'. Downloading...".format(name))

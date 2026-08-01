@@ -218,6 +218,42 @@ def str_to_bool(value):
 
 
 # ---------------------------------------------------------------------------
+# Storage guard — shared by pkg install / downloads / logging apps.
+# Onboard flash must never fill completely: an OS update needs headroom to
+# unpack. So writes warn hard at 95% and stop at 98%, leaving ~2% free.
+# ---------------------------------------------------------------------------
+STORAGE_WARN = 95      # % used: warn, but allow
+STORAGE_BLOCK = 98     # % used: refuse (keep ~2% for updates)
+
+
+def disk_usage_pct(path="/"):
+    """Onboard flash usage as an integer percent (0-100), or None if unknown."""
+    try:
+        import uos
+        st = uos.statvfs(path)
+        total = st[2]                       # f_blocks
+        free = st[3]                        # f_bfree
+        if total <= 0:
+            return None
+        return int((total - free) * 100 // total)
+    except Exception:
+        return None
+
+
+def storage_state(path="/"):
+    """(pct, level) where level is 'ok' / 'warn' (>=95%) / 'block' (>=98%).
+    level is 'ok' when usage can't be read, so a probe failure never blocks."""
+    pct = disk_usage_pct(path)
+    if pct is None:
+        return None, "ok"
+    if pct >= STORAGE_BLOCK:
+        return pct, "block"
+    if pct >= STORAGE_WARN:
+        return pct, "warn"
+    return pct, "ok"
+
+
+# ---------------------------------------------------------------------------
 # Output functions
 # All print to the terminal AND write to the session log if one is active.
 # ---------------------------------------------------------------------------
