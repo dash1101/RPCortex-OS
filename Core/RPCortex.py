@@ -46,6 +46,68 @@ post_check = True
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# Radio lock (airplane / incognito)
+# ---------------------------------------------------------------------------
+# A hard stop on every radio, enforced at the LOWEST level rather than by asking
+# callers nicely. Turning an interface off does not hold: the next scan() or
+# connect() simply turns it back on, which is why a "killed" radio could still be
+# scanned and connected. The lock is a latch that net.py consults before handing
+# out an interface at all, so there is no path that quietly re-enables it.
+#
+# Settings.Radio_Lock — 'on' locks. It persists, so a locked device stays locked
+# across a reboot: a privacy switch that forgets itself when the battery dips is
+# not a privacy switch.
+_RADIO_LOCK_KEY = 'Settings.Radio_Lock'
+
+
+def radio_locked():
+    """True while every radio is being held down."""
+    try:
+        import regedit
+        return str(regedit.read(_RADIO_LOCK_KEY) or 'off').lower() in ('on', 'true', '1')
+    except Exception:
+        return False
+
+
+def lock_radios(on=True):
+    """Engage or release the lock. Engaging also takes the interfaces down NOW;
+    the latch is what stops them coming back up."""
+    try:
+        import regedit
+        regedit.save(_RADIO_LOCK_KEY, 'on' if on else 'off')
+    except Exception:
+        return False
+    if on:
+        _radios_down()
+    return True
+
+
+def _radios_down():
+    """Best-effort: deactivate everything we can reach. Each radio is isolated so
+    a missing one cannot stop the others being silenced."""
+    try:
+        import network
+        for attr in ('STA_IF', 'AP_IF'):
+            try:
+                w = network.WLAN(getattr(network, attr))
+                try:
+                    if w.isconnected():
+                        w.disconnect()
+                except Exception:
+                    pass
+                w.active(False)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        import bluetooth
+        bluetooth.BLE().active(False)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # TLS heap reserve (ballast)
 # ---------------------------------------------------------------------------
 # A TLS handshake needs ONE unbroken ~16.7 KB block: MicroPython builds mbedTLS

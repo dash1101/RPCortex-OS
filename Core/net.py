@@ -32,7 +32,12 @@ _NETWORKS_FILE = '/Vela/Registry/networks.cfg'
 # ---------------------------------------------------------------------------
 
 def is_available():
-    """Return True if this board has WiFi hardware."""
+    """True if this board has WiFi hardware AND the radio lock is off.
+
+    Deliberately reports unavailable while locked: callers branch on this to skip
+    network work entirely, which is exactly what should happen."""
+    if radio_locked():
+        return False
     try:
         import network
         return hasattr(network, 'WLAN')
@@ -41,7 +46,11 @@ def is_available():
 
 
 def online():
-    """Return True if WiFi hardware is present AND the STA interface is connected."""
+    """Return True if WiFi hardware is present AND the STA interface is connected.
+    Always False while the radio lock is engaged — a locked device is not online
+    even if the interface has not finished coming down yet."""
+    if radio_locked():
+        return False
     try:
         import network
         if not hasattr(network, 'WLAN'):
@@ -52,8 +61,39 @@ def online():
         return False
 
 
+def _no_wifi_reason():
+    """Why there is no interface. 'not supported on this board' is a lie when the
+    radios are simply locked, and it sends people looking for a hardware fault."""
+    if radio_locked():
+        return ("Radios are LOCKED (airplane/incognito). "
+                "Run 'radio on' to re-enable them.")
+    return "WiFi not supported on this board."
+
+
+def radio_locked():
+    """True while the radio lock is engaged (airplane / incognito)."""
+    try:
+        import RPCortex as _R
+        return _R.radio_locked()
+    except Exception:
+        return False
+
+
 def _get_wlan():
-    """Return the STA interface, or None if not supported."""
+    """Return the STA interface, or None if not supported OR the radio is locked.
+
+    Returning None while locked is the whole enforcement: every caller in this
+    module already handles "no WiFi hardware", so the lock reuses that path and
+    there is no route left that quietly brings the interface back up. It also
+    actively deactivates on the way out — anything that reached for the radio
+    ends up turning it off instead."""
+    if radio_locked():
+        try:
+            import RPCortex as _R
+            _R._radios_down()
+        except Exception:
+            pass
+        return None
     try:
         import network
         return network.WLAN(network.STA_IF)
@@ -111,7 +151,7 @@ def scan():
     """
     wlan = _get_wlan()
     if wlan is None:
-        error("WiFi not supported on this board.")
+        error(_no_wifi_reason())
         return []
 
     was_active = wlan.active()
@@ -161,7 +201,7 @@ def connect(ssid, password, timeout=20, silent=False):
 
     wlan = _get_wlan()
     if wlan is None:
-        error("WiFi not supported on this board.")
+        error(_no_wifi_reason())
         return False
 
     if wlan.isconnected():
@@ -250,7 +290,7 @@ def disconnect():
     """Disconnect from the current WiFi network."""
     wlan = _get_wlan()
     if wlan is None:
-        error("WiFi not supported on this board.")
+        error(_no_wifi_reason())
         return
     if not wlan.isconnected():
         warn("Not currently connected.")

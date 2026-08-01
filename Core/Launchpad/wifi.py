@@ -277,11 +277,11 @@ def _list_saved():
 
 
 def _add(ssid_arg):
+    # Deliberately does NOT require the radio. Saving a network is a file write,
+    # and it must keep working while the radios are locked — otherwise engaging
+    # airplane mode also takes away your ability to set up the network you want
+    # to join when you leave it.
     import net
-    if not net.is_available():
-        error("WiFi hardware not available.")
-        return
-
     ssid = ssid_arg.strip() if ssid_arg else inpt("SSID").strip()
     if not ssid:
         warn("No SSID entered.")
@@ -291,11 +291,9 @@ def _add(ssid_arg):
 
 
 def _forget(ssid_arg):
+    # Also radio-independent: removing a saved network is a file edit, and being
+    # able to forget one while locked down is exactly when you want it most.
     import net
-    if not net.is_available():
-        error("WiFi hardware not available.")
-        return
-
     if not ssid_arg:
         _list_saved()
         ssid_arg = inpt("SSID to forget").strip()

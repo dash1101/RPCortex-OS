@@ -189,6 +189,43 @@ def meminfo(args=None):
         warn("Not enough contiguous RAM for an HTTPS handshake — reboot to defragment.")
 
 
+def radio(args=None):
+    """radio [on|off|status] — the hard stop for every radio.
+
+    'off' locks WiFi and Bluetooth down and KEEPS them down: the lock is a latch
+    net.py checks before handing out an interface, so nothing can quietly bring a
+    radio back up. It persists across a reboot, because a privacy switch that
+    forgets itself is not one."""
+    import RPCortex as _R
+    a = (args or '').strip().lower()
+    if a in ('help', '-h', '--help', '?'):
+        multi("Usage: radio off      lock every radio down (persists)")
+        multi("       radio on       release the lock")
+        multi("       radio status   show the current state")
+        return
+    if a in ('off', 'lock', 'airplane'):
+        _R.lock_radios(True)
+        ok("Radios LOCKED. Nothing can transmit or scan until 'radio on'.")
+        return
+    if a in ('on', 'unlock'):
+        _R.lock_radios(False)
+        ok("Radios released. WiFi will reconnect if autoconnect is enabled.")
+        return
+    locked = _R.radio_locked()
+    multi("  Radios : {}".format('LOCKED' if locked else 'available'))
+    if locked:
+        multi("  Nothing will scan, connect or advertise. 'radio on' releases it.")
+    else:
+        try:
+            import net
+            st = net.status()
+            multi("  WiFi   : {}".format(
+                'connected to ' + str(st.get('ssid')) if st.get('connected')
+                else ('up' if st.get('active') else 'idle')))
+        except Exception:
+            pass
+
+
 def defrag(args=None):
     """defrag [on|auto|off|now] — the contiguous-memory tool.
 

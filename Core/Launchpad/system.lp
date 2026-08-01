@@ -49,6 +49,8 @@ sysinfo:/Core/Launchpad/sys_sys.py:sysinfo
 uname:/Core/Launchpad/sys_sys.py:ver
 meminfo:/Core/Launchpad/sys_sys.py:meminfo
 defrag:/Core/Launchpad/sys_sys.py:defrag
+radio:/Core/Launchpad/sys_sys.py:radio
+airplane:/Core/Launchpad/sys_sys.py:radio
 free:/Core/Launchpad/sys_sys.py:meminfo
 uptime:/Core/Launchpad/sys_sys.py:uptime
 date:/Core/Launchpad/sys_sys.py:date
