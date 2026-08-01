@@ -611,13 +611,26 @@ def wget(url, dest=None, chunk_size=512, verbose=True):
                     sys.stdout.write('\n')   # finish the progress line
                 return status, written
             else:
-                body = body_buf
+                # Collect the chunks and join ONCE.
+                #
+                # This used to be `body += chunk`, which builds a brand new bytes
+                # object of the whole accumulated length on every chunk. Fetching
+                # the 6 KB package index at 512-byte chunks meant twelve
+                # progressively larger allocations (512, 1024, ... 6144 = ~40 KB
+                # of churn to produce 6 KB), each one leaving a hole behind. On a
+                # non-moving GC those holes are permanent, and this runs directly
+                # after a TLS handshake -- the exact moment a large contiguous
+                # block is needed. join() makes it ONE allocation of the final
+                # size instead of twelve.
+                parts = [body_buf] if body_buf else []
                 del body_buf
                 while True:
                     chunk = s.recv(chunk_size)
                     if not chunk:
                         break
-                    body += chunk
+                    parts.append(chunk)
+                body = b''.join(parts)
+                del parts
                 return status, body
         finally:
             try:
@@ -785,6 +798,7 @@ async def awget(url, dest=None, chunk_size=512, verbose=True, emit=None):
             else:
                 body = body_buf
                 del body_buf
+                parts = [body] if body else []
                 while True:
                     try:
                         chunk = await _aread(reader, chunk_size)
@@ -792,9 +806,11 @@ async def awget(url, dest=None, chunk_size=512, verbose=True, emit=None):
                         break
                     if not chunk:
                         break
-                    body += chunk
+                    parts.append(chunk)          # joined once -- see wget()
                     if await _await_or_abort(0):
                         break
+                body = b''.join(parts)
+                del parts
                 gc.collect()
                 return status, body
         finally:
