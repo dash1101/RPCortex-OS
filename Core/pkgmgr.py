@@ -287,6 +287,51 @@ def _clear_reg_keys(reg_keys_str):
     if cleared:
         ok("Removed {} registry key(s).".format(cleared))
 
+
+def _pkg_command_names(meta):
+    """Command names a package registers, from pkg.cmd
+    ('name:/path:func; name2:/path:func')."""
+    out = []
+    for seg in (meta.get('pkg.cmd') or '').split(';'):
+        seg = seg.strip()
+        if seg and ':' in seg:
+            out.append(seg.split(':', 1)[0].strip())
+    return out
+
+
+def _remove_autostart_lines(cmd_names):
+    """Strip startup.cfg / services.cfg lines that invoke one of a removed
+    package's commands, so removing a package also removes its startup task and
+    background service. Otherwise the orphaned line runs at every boot and errors
+    ('not a command')."""
+    names = set(n for n in cmd_names if n)
+    if not names:
+        return
+    removed = 0
+    for path in ('/Vela/Registry/startup.cfg', '/Vela/Registry/services.cfg'):
+        try:
+            with open(path, 'r') as f:
+                lines = f.read().split('\n')
+        except OSError:
+            continue
+        kept = []
+        changed = False
+        for ln in lines:
+            s = ln.strip()
+            if s and not s.startswith('#') and s.split(None, 1)[0] in names:
+                removed += 1
+                changed = True
+                continue
+            kept.append(ln)
+        if changed:
+            try:
+                with open(path, 'w') as f:
+                    f.write('\n'.join(kept))
+            except OSError:
+                pass
+    if removed:
+        ok("Removed {} autostart entr{}.".format(removed, 'y' if removed == 1 else 'ies'))
+
 # ---------------------------------------------------------------------------
 # Repo management
 # ---------------------------------------------------------------------------
@@ -958,17 +1003,21 @@ def uninstall(pkg_name, force=False):
             info("Built-in packages can still be upgraded: pkg upgrade")
             return False
         reg_keys = meta_check.get('pkg.reg_keys', '')
+        cmd_names = _pkg_command_names(meta_check)
     except OSError:
-        pass
+        cmd_names = []
 
     info("Removing '{}'...".format(target_dir))
     _rmtree(target_dir)
     _unregister_commands(pkg_name)
 
-    # During an upgrade (force=True) the registry keys are kept so the
-    # package's settings survive the reinstall.
-    if reg_keys and not force:
-        _clear_reg_keys(reg_keys)
+    # During an upgrade (force=True) keep the registry keys AND the autostart
+    # entries so the package's settings + startup survive the reinstall. A real
+    # removal drops both, so nothing orphaned runs at boot.
+    if not force:
+        if reg_keys:
+            _clear_reg_keys(reg_keys)
+        _remove_autostart_lines(cmd_names)
 
     ok("Package '{}' removed.".format(pkg_name))
     return True
