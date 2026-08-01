@@ -299,6 +299,25 @@ def _pkg_command_names(meta):
     return out
 
 
+
+def _stop_pkg_services(cmd_names):
+    """Unregister live background services belonging to a package being removed.
+    Service names follow the command name (the Nova GUI registers 'novad1'), so any
+    desired service matching one of the package's commands is cancelled."""
+    try:
+        import sys
+        lp = sys.modules.get('Core.launchpad') or sys.modules.get('launchpad')
+        if lp is None or not hasattr(lp, 'unregister_service'):
+            return
+        names = set(n.lower() for n in cmd_names if n)
+        for svc, _live in list(lp.list_services()):
+            if svc.lower() in names:
+                lp.unregister_service(svc)
+                info("Stopped background service '{}'.".format(svc))
+    except Exception:
+        pass
+
+
 def _remove_autostart_lines(cmd_names):
     """Strip startup.cfg / services.cfg lines that invoke one of a removed
     package's commands, so removing a package also removes its startup task and
@@ -1029,6 +1048,11 @@ def uninstall(pkg_name, force=False):
         cmd_names = _pkg_command_names(meta_check)
     except OSError:
         cmd_names = []
+
+    # Stop any background services this package registered BEFORE deleting its
+    # files. Otherwise a running service keeps executing against modules that no
+    # longer exist and dies with an unretrieved ImportError on the event loop.
+    _stop_pkg_services(cmd_names)
 
     info("Removing '{}'...".format(target_dir))
     _rmtree(target_dir)
