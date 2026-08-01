@@ -266,6 +266,12 @@ def _fmt(color, symbol, msg, p, nL):
     out += " {}{}".format(WHITE, msg)
     if nL:
         out += '\n'
+    if _capture is not None:
+        # Capture info/ok/warn/error too, not just multi(). Previously only multi()
+        # was buffered, so a command whose whole result came from ok() (freeup,
+        # wifi status, ...) captured NOTHING and the GUI could only show '(done)'.
+        _capture.append(out)
+        return
     sys.stdout.write(out)   # faster than print() on MicroPython (no arg/sep/end work)
 
 
