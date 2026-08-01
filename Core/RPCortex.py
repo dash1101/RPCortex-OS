@@ -45,6 +45,89 @@ post_check = True
 # script conditionals WITHOUT every command needing to return one.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# TLS heap reserve (ballast)
+# ---------------------------------------------------------------------------
+# A TLS handshake needs ONE unbroken ~16.7 KB block: MicroPython builds mbedTLS
+# with MBEDTLS_SSL_IN_CONTENT_LEN 16384 and mbedtls_ssl_setup() takes the input
+# buffer as a single m_tracked_calloc out of the GC heap. The GC never compacts
+# (py/gc.c is non-moving), so once a long-running device has carved that heap up,
+# no amount of collecting will produce such a run again — gc.mem_free() can say
+# 90 KB while the largest hole is a fraction of that. This is why HTTPS works
+# from a fresh boot and fails an hour later.
+#
+# The fix is to claim the block while the heap is still clean and hold it, then
+# hand it over at the moment it is needed. From py/gc.c this works because:
+#   - gc_alloc scans FIRST-FIT from area->gc_last_free_atb_index
+#   - gc_free pulls that index back to the freed block if it is earlier
+#   - gc_collect_end resets the index to 0
+# so a block released low in the heap is the first thing the next scan finds, and
+# the handshake's allocation lands in exactly the hole we just opened. Nothing
+# must allocate in between, which is why release_reserve() is called immediately
+# before the wrap and nowhere else.
+#
+# Gated by Settings.TLS_Reserve — 'off' (default), 'auto' (arm only when there is
+# comfortable headroom), or 'on'. It costs its own size in permanent headroom, so
+# it stays off until it has been confirmed on hardware.
+TLS_RESERVE_BYTES = 16384 + 1024      # input buffer + record overhead + slack
+_tls_reserve = None
+
+
+def arm_reserve(size=None, force=False):
+    """Claim the contiguous TLS block. Call once at boot, while the heap is clean.
+
+    Returns True if the reserve is held. Never raises: failing to arm just means
+    the device behaves exactly as it did before."""
+    global _tls_reserve
+    if _tls_reserve is not None:
+        return True
+    mode = 'off'
+    try:
+        import regedit
+        mode = str(regedit.read('Settings.TLS_Reserve') or 'off').strip().lower()
+    except Exception:
+        pass
+    if not force and mode not in ('on', 'auto', 'true', '1'):
+        return False
+    size = size or TLS_RESERVE_BYTES
+    try:
+        import gc
+        gc.collect()
+        if mode == 'auto' and not force:
+            # Don't take the last of a tight heap — that would make the very
+            # problem it exists to prevent strictly worse.
+            if gc.mem_free() < size * 4:
+                return False
+        _tls_reserve = bytearray(size)
+        return True
+    except Exception:
+        _tls_reserve = None
+        return False
+
+
+def release_reserve():
+    """Hand the block over, immediately before a TLS handshake. True if we had one.
+
+    The collect matters as much as the free: it resets the allocator's scan index
+    to the start of the heap, so the very next allocation finds this hole first."""
+    global _tls_reserve
+    if _tls_reserve is None:
+        return False
+    _tls_reserve = None
+    try:
+        import gc
+        gc.collect()
+    except Exception:
+        pass
+    return True
+
+
+def reserve_state():
+    """(held, size) — for `meminfo` and the Nova D1 troubleshoot screen."""
+    return (_tls_reserve is not None,
+            len(_tls_reserve) if _tls_reserve is not None else 0)
+
+
 _capture   = None     # list buffer while capturing multi() output, else None
 _had_error = False    # set by error()/fatal(); cleared per command by the shell
 

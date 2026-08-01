@@ -2291,6 +2291,18 @@ def launchpad_init(username, password, auth=True):
     except Exception:
         pass
 
+    # Claim the TLS block here, at the cleanest point the heap ever reaches after
+    # boot: command tables loaded, nothing else run yet. A handshake needs one
+    # unbroken ~16.7 KB run, and a non-moving GC can never re-create that once the
+    # heap is carved up, which is why HTTPS works from a fresh boot and fails an
+    # hour later. Gated by Settings.TLS_Reserve and OFF by default; arm_reserve()
+    # returns False and changes nothing when it is not enabled. See RPCortex.py.
+    try:
+        import RPCortex as _R          # only names are imported at module level
+        _R.arm_reserve()
+    except Exception:
+        pass
+
     # Set home directory and start there
     home = '/Users/{}'.format(username)
     _shell_state['home'] = home

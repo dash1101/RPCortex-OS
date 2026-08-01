@@ -421,8 +421,9 @@ def _open_connection(host, port, use_ssl, timeout=15):
         if not _has_contiguous(_TLS_BLOCK):
             _reclaim_heap()
             gc.collect()
-            if not _has_contiguous(_TLS_BLOCK):
+            if not _has_contiguous(_TLS_BLOCK) and not _take_reserve():
                 raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free(), _TLS_BLOCK))
+        _take_reserve()          # last thing before the wrap — see _take_reserve
         try:
             s = _wrap_tls(s, host)
         except Exception as e:
@@ -478,6 +479,28 @@ def _is_oom(exc):
         except Exception:
             return False
     return False
+
+
+def _take_reserve():
+    """Hand the boot-time TLS block over, if one is held. Called immediately
+    before the wrap and NOWHERE else: anything that allocates between the release
+    and the handshake can take a bite out of the hole we just opened."""
+    try:
+        import RPCortex as _R
+        return _R.release_reserve()
+    except Exception:
+        return False
+
+
+def _rearm_reserve():
+    """Re-claim the block once the TLS socket is closed, so the NEXT handshake is
+    protected too. Best-effort — if the heap can no longer provide it, the device
+    is simply back to its previous behaviour."""
+    try:
+        import RPCortex as _R
+        return _R.arm_reserve()
+    except Exception:
+        return False
 
 
 def _has_contiguous(n):
@@ -678,6 +701,7 @@ def wget(url, dest=None, chunk_size=512, verbose=True):
                 s.close()
             except Exception:
                 pass
+            _rearm_reserve()          # ready for the next handshake
     raise OSError("Too many redirects")
 
 
@@ -716,7 +740,7 @@ async def _aopen_connection(host, port, use_ssl, timeout=15):
         if not _has_contiguous(_TLS_BLOCK):
             _reclaim_heap()
             gc.collect()
-            if not _has_contiguous(_TLS_BLOCK):
+            if not _has_contiguous(_TLS_BLOCK) and not _take_reserve():
                 raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free(), _TLS_BLOCK))
         try:
             import ssl as _ssl
@@ -740,6 +764,7 @@ async def _aopen_connection(host, port, use_ssl, timeout=15):
                 ctx.verify_mode = _ssl.CERT_NONE
             except Exception:
                 pass
+        _take_reserve()          # last thing before the handshake
         try:
             return await asyncio.wait_for(
                 asyncio.open_connection(host, port, ssl=ctx, server_hostname=host),
@@ -867,6 +892,7 @@ async def awget(url, dest=None, chunk_size=512, verbose=True, emit=None):
                 await writer.wait_closed()
             except Exception:
                 pass
+            _rearm_reserve()
     raise OSError("Too many redirects")
 
 
@@ -1315,6 +1341,7 @@ def curl(url, chunk_size=512, verbose=False, method='GET', data=None,
                 s.close()
             except Exception:
                 pass
+            _rearm_reserve()
     raise OSError("Too many redirects")
 
 

@@ -143,6 +143,29 @@ def sysinfo(args=None):
         multi("  Flash Free  : {} KB".format(free_flash // 1024))
 
 
+def _largest_block(cap=40960):
+    """Biggest block that can actually be allocated right now, by probing.
+
+    Free memory is not the number that matters on this device. The GC never
+    compacts, so the heap can hold 90 KB of free space with no single unbroken
+    run big enough for a TLS handshake (~16.7 KB). Reporting only 'Free' is why
+    'plenty of memory' and 'cannot open HTTPS' kept looking like a contradiction."""
+    lo, hi, best = 0, cap, 0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if mid <= 0:
+            break
+        try:
+            b = bytearray(mid)
+            del b
+            best = mid
+            lo = mid + 1024
+        except MemoryError:
+            hi = mid - 1024
+    gc.collect()
+    return best
+
+
 def meminfo(args=None):
     gc.collect()
     free  = gc.mem_free()
@@ -152,6 +175,65 @@ def meminfo(args=None):
     multi("  Total : {} KB".format(total // 1024))
     multi("  Used  : {} KB  ({}%)".format(alloc // 1024, pct))
     multi("  Free  : {} KB".format(free // 1024))
+    big = _largest_block()
+    frag = 100 - (big * 100 // free) if free else 0
+    multi("  Largest block : {} KB   (fragmentation {}%)".format(big // 1024, frag))
+    try:
+        import RPCortex as _R
+        held, size = _R.reserve_state()
+        multi("  TLS reserve   : {}".format(
+            "held, {} KB".format(size // 1024) if held else "not held"))
+    except Exception:
+        pass
+    if big < 17408:
+        warn("Not enough contiguous RAM for an HTTPS handshake — reboot to defragment.")
+
+
+def defrag(args=None):
+    """defrag [on|auto|off|now] — the contiguous-memory tool.
+
+    Bare: reclaim and report what the heap can actually hand out. The rest
+    manage Settings.TLS_Reserve, the block held from boot so an HTTPS handshake
+    always has its ~16.7 KB run available (see RPCortex.arm_reserve)."""
+    import RPCortex as _R
+    a = (args or '').strip().lower()
+    if a in ('help', '-h', '--help', '?'):
+        multi("Usage: defrag            reclaim + report contiguous memory")
+        multi("       defrag on|auto|off  hold a TLS block from boot")
+        multi("       defrag now          try to claim it right now")
+        return
+    if a in ('on', 'auto', 'off'):
+        regedit.save('Settings.TLS_Reserve', a)
+        ok("TLS reserve set to '{}' (applies from the next boot).".format(a))
+        if a == 'off':
+            _R.release_reserve()
+        return
+    before = gc.mem_free()
+    try:
+        import sys as _sys
+        lp = _sys.modules.get('Core.launchpad')
+        if lp is not None and hasattr(lp, 'free_heap'):
+            lp.free_heap()
+    except Exception:
+        pass
+    gc.collect()
+    gc.collect()
+    if a == 'now':
+        ok("TLS block claimed." if _R.arm_reserve(force=True)
+           else "Could not claim a TLS block — the heap is too fragmented.")
+    big = _largest_block()
+    free = gc.mem_free()
+    multi("  Free          : {} KB  (reclaimed {} KB)".format(
+        free // 1024, max(0, free - before) // 1024))
+    multi("  Largest block : {} KB".format(big // 1024))
+    held, size = _R.reserve_state()
+    multi("  TLS reserve   : {}".format(
+        "held, {} KB".format(size // 1024) if held else "not held"))
+    if big >= 17408 or held:
+        ok("Enough contiguous RAM for an HTTPS handshake.")
+    else:
+        warn("Not enough contiguous RAM for HTTPS. Reboot to defragment — "
+             "a fresh boot has the least fragmentation.")
 
 
 def date(args=None):
