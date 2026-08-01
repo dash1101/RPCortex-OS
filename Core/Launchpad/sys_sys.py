@@ -932,7 +932,7 @@ def _update_check():
     return None
 
 
-def _update_online(force=False):
+def _update_online(force=False, assume_yes=False):
     """OTA: download the latest .rpc and apply it (preserving user data)."""
     manifest = _update_check()
     if manifest is None:
@@ -944,7 +944,7 @@ def _update_online(force=False):
     multi("")
     if not _download_latest(_OTA_TMP):
         return
-    _update_from_file(_OTA_TMP, new_build=manifest.get('build'))
+    _update_from_file(_OTA_TMP, new_build=manifest.get('build'), assume_yes=assume_yes)
     # Only reached if the update was cancelled or failed (success reboots)
     try:
         uos.remove(_OTA_TMP)
@@ -975,7 +975,10 @@ def update(args=None):
         if not rest:
             warn("Usage: update from-file <path/to/os.rpc>")
             return
-        _update_from_file(rest)
+        parts = rest.split()
+        yes = any(p in ('-y', '--yes') for p in parts)
+        path = ' '.join(p for p in parts if p not in ('-y', '--yes'))
+        _update_from_file(path, assume_yes=yes)
 
     elif sub == 'check':
         _update_check()
@@ -984,7 +987,8 @@ def update(args=None):
         _update_channel_cmd(rest)
 
     elif sub == 'online':
-        _update_online(force=(rest == '--force'))
+        _update_online(force=('--force' in rest),
+                       assume_yes=('-y' in rest.split() or '--yes' in rest.split()))
 
     elif sub == 'reinstall':
         # Full factory wipe + reinstall (the old standalone `reinstall` command).
@@ -1000,7 +1004,7 @@ def update(args=None):
         _update_help()
 
 
-def _update_from_file(archive_path, new_build=None):
+def _update_from_file(archive_path, new_build=None, assume_yes=False):
     """Apply a .rpc archive as an OS update.  new_build (from the OTA manifest)
     is shown on success when known; otherwise the new build appears at next login."""
     # Resolve relative paths
@@ -1058,10 +1062,16 @@ def _update_from_file(archive_path, new_build=None):
     multi("")
     multi("  Tip: run 'freeup' first if you're on a Pico 1 with limited RAM.")
     multi("")
-    confirm = inpt("Type UPDATE to proceed (anything else cancels)")
-    if confirm.strip() != "UPDATE":
-        info("Update cancelled.")
-        return
+    if assume_yes:
+        # Non-interactive: the confirmation already happened (the user chose Update
+        # in the GUI, or passed -y). There is no keyboard on the device panel, so
+        # prompting here would hang a staged update forever.
+        info("Proceeding (confirmed).", p="Update")
+    else:
+        confirm = inpt("Type UPDATE to proceed (anything else cancels)")
+        if confirm.strip() != "UPDATE":
+            info("Update cancelled.")
+            return
 
     multi("")
     info("Starting OS update...", p="Update")
