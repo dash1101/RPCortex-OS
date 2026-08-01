@@ -898,11 +898,20 @@ _FULL_TMP   = '/update.rpc'   # the stub auto-installs this on boot after a wipe
 
 
 def _update_channel():
-    """The OTA channel this device tracks: 'beta' if opted in, else 'stable'.
-    Stable is the default (absent/blank key), so existing devices are never
-    auto-moved onto beta builds."""
-    return 'beta' if (regedit.read('Settings.Update_Channel') or '').strip().lower() == 'beta' \
-        else 'stable'
+    """The OTA channel this device tracks.
+
+    An explicit Settings.Update_Channel always wins. With no choice recorded the
+    channel follows the STAGE of the build that is running: a device on a
+    pre-release image checks the beta manifest, because checking stable would
+    compare it against something older than itself. Only the stage values in
+    PRE_STAGES do that. Anything unrecognised — including the 'dev' placeholder
+    RPCortex.py uses when buildinfo cannot be imported — stays on stable, so a
+    device whose stage cannot be read is never silently moved onto beta builds."""
+    choice = (regedit.read('Settings.Update_Channel') or '').strip().lower()
+    if choice in ('stable', 'beta'):
+        return choice
+    stage = (regedit.read('System.Stage') or '').strip().lower()
+    return 'beta' if stage in PRE_STAGES else 'stable'
 
 
 def _manifest_url():
@@ -965,6 +974,24 @@ def _download_latest(dest):
         return False
     ok("Downloaded {} KB to {}.".format(written // 1024, dest), p="Update")
     return True
+
+
+# Stage values meaning "pre-release", used to pick the default update channel.
+# Kept identical to PRE_STAGES in the Nova D1 novagui.py.
+PRE_STAGES = ('pre-release', 'prerelease', 'beta', 'alpha', 'rc')
+
+
+def _build_n(b):
+    """The running build counter from a build id like '0.91.114' -> 114.
+
+    build.py composes the id as <major>.<rest><counter>, with the counter bumped
+    on every build. Only the counter is comparable, and only between two ids of
+    the same version. Returns -1 when there is nothing to read, so an unparseable
+    id never counts as newer than what is installed."""
+    try:
+        return int(str(b or '').strip().split('.')[-1])
+    except Exception:
+        return -1
 
 
 def _vt(v):
@@ -1045,7 +1072,10 @@ def _update_check():
     cur_build    = regedit.read('System.Build') or 'source'
     latest_build = manifest.get('build', '')
     newer_version = _vt(latest) > _vt(cur)
-    new_build     = (_vt(latest) == _vt(cur)) and bool(latest_build) and (latest_build != cur_build)
+    # Same version, but the manifest's build counter is ahead of the installed
+    # one. "Different" is not enough: a device built more recently than the last
+    # published image would be offered its own past as an update.
+    new_build     = (_vt(latest) == _vt(cur)) and (_build_n(latest_build) > _build_n(cur_build))
 
     if newer_version or new_build:
         notes = manifest.get('notes', '')
