@@ -340,18 +340,51 @@ def _crit_rawrepl(args=None):
     request_repl()
 
 
-def free_heap():
-    """Reclaim the command cache and collect; return free bytes afterward.
+def _command_module_names():
+    """Module basenames of every command in the table, e.g. 'sys_fs', 'pkg'.
 
-    The command cache holds imported command modules / exec scopes and is the
-    single biggest reclaimable chunk on a working device (freeup reclaims it).
-    Exposed as a plain function so low-level code — e.g. net.py before a TLS
-    handshake — can reach it via sys.modules['Core.launchpad'].free_heap() and
-    get the most contiguous heap possible. Safe to call mid-command: a running
-    command's module stays alive via its call-stack frame, so only OTHER cached
-    scopes are dropped; the next command simply re-imports (cheap for .mpy)."""
+    Derived from the .lp mappings (cmd -> '/path/file.py:func') so it follows the
+    command table rather than hard-coding a list that would rot."""
+    out = set()
+    for mapping in commands.values():
+        try:
+            path = mapping.split(':', 1)[0]
+            name = path[path.rfind('/') + 1:]
+            if name.endswith('.py'):
+                name = name[:-3]
+            elif name.endswith('.mpy'):
+                name = name[:-4]
+            if name:
+                out.add(name)
+        except Exception:
+            pass
+    return out
+
+
+def free_heap():
+    """Drop cached command scopes AND their modules; return free bytes after.
+
+    Clearing _cmd_cache alone reclaims almost nothing on a COMPILED build, and
+    that is the build we ship. _get_scope routes a .mpy through _lp_import, which
+    is `__import__` — so the module lands in sys.modules and STAYS there, and the
+    cache holds only a reference to something sys.modules is already keeping
+    alive. Measured on a Pico 2 W: cache empty, yet sys_fs, sys_sys, sys_task,
+    sys_user and pkg all still resident, and `freeup` reporting "+2 KB".
+
+    So the modules have to go too. This is safe for exactly the reason dropping
+    the cache was: a running command's module is held by its call-stack frame, so
+    popping the sys.modules entry does not collect it until it returns, and the
+    next call re-imports — cheap for a .mpy. Only modules named by the command
+    table are touched, never Core infrastructure.
+    """
     import gc as _gc
+    import sys as _sys
     _cmd_cache.clear()
+    for name in _command_module_names():
+        # Never evict this module or the pieces the shell is standing on.
+        if name in ('launchpad', 'RPCortex', 'regedit', 'usrmgmt', 'lineedit'):
+            continue
+        _sys.modules.pop(name, None)
     _gc.collect()
     _gc.collect()
     return _gc.mem_free()
