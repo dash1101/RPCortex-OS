@@ -572,7 +572,12 @@ def _lp_import(file_path):
         name = name[:-4]
     dir_path = file_path[:slash]
     if dir_path not in sys.path:
-        sys.path.append(dir_path)
+    # INSERT at 1, do not append. sys.path is ['', '.frozen', '/lib'], so an
+    # appended package directory sits AFTER '.frozen' — and on a build with
+    # frozen modules the frozen copy would win, silently ignoring an installed
+    # update. Index 1 keeps the current directory first (so a local script still
+    # takes precedence) while putting installed packages ahead of frozen ones.
+        sys.path.insert(1, dir_path)
     if name in sys.modules:
         mod = sys.modules[name]
     else:
@@ -734,7 +739,7 @@ def execute_file(name, args):
             d = path[:slash] or '/'
             modname = path[slash + 1:-4]
             if d not in sys.path:
-                sys.path.append(d)
+                sys.path.insert(1, d)   # ahead of '.frozen' — see _get_scope
             if modname in sys.modules:
                 del sys.modules[modname]      # re-run on each launch
             mod = __import__(modname)
