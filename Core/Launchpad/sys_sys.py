@@ -479,7 +479,14 @@ def pulse(args):
 
     parts = args.strip().split(None, 1)
     sub   = parts[0].lower()
+    # `rest` stays None when there are no further words, because several
+    # subcommands below treat None as "no argument given". The flag tests must
+    # therefore never index it directly — a bare `update online` did
+    # `'--force' in rest` against None and died with "'NoneType' object isn't
+    # iterable", which broke the single most common way to run an update. Flags
+    # are parsed from this list instead.
     rest  = parts[1].strip() if len(parts) > 1 else None
+    flags = rest.split() if rest else []
 
     if sub == 'status':
         multi("  Current    : {} MHz".format(machine.freq() // 1_000_000))
@@ -1051,7 +1058,14 @@ def update(args=None):
 
     parts = args.strip().split(None, 1)
     sub   = parts[0].lower()
+    # `rest` stays None when there are no further words, because several
+    # subcommands below treat None as "no argument given". The flag tests must
+    # therefore never index it directly — a bare `update online` did
+    # `'--force' in rest` against None and died with "'NoneType' object isn't
+    # iterable", which broke the single most common way to run an update. Flags
+    # are parsed from this list instead.
     rest  = parts[1].strip() if len(parts) > 1 else None
+    flags = rest.split() if rest else []
 
     if sub == 'from-file':
         if not rest:
@@ -1069,8 +1083,8 @@ def update(args=None):
         _update_channel_cmd(rest)
 
     elif sub == 'online':
-        _update_online(force=('--force' in rest),
-                       assume_yes=('-y' in rest.split() or '--yes' in rest.split()))
+        _update_online(force=('--force' in flags or '-f' in flags),
+                       assume_yes=('-y' in flags or '--yes' in flags))
 
     elif sub == 'reinstall':
         # Full factory wipe + reinstall (the old standalone `reinstall` command).
