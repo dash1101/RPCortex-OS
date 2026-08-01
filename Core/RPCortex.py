@@ -128,17 +128,25 @@ def _radios_down():
 # must allocate in between, which is why release_reserve() is called immediately
 # before the wrap and nowhere else.
 #
-# Gated by Settings.TLS_Reserve — 'auto' (the default), 'on', or 'off'.
+# Gated by Settings.TLS_Reserve — 'off' (the DEFAULT), 'auto', or 'on'.
 #
-# 'auto' arms the reserve only when there is at least 4x its size free at boot,
-# so on a device that is already short of memory it declines and changes nothing.
-# That is what makes it safe as a default: the failure mode of arming is using
-# 17 KB you did not have, and the check makes that impossible.
+# It defaults OFF, and that default is the result of getting this wrong on
+# hardware. Briefly defaulting it to 'auto' cost a Pico 2 W a third of its
+# remaining free heap: free fell from ~53 KB to ~32 KB, and the OS then could not
+# import a 2.7 KB command module. `wifi autoconnect` and `sreboot` both died
+# allocating 1148 bytes and dropped the board to the REPL.
 #
-# It defaults on because the alternative is worse. The pre-handshake check asks
-# for the real 16.7 KB now, so a fragmented device fails the check outright and
-# an update reports "Low RAM" instead of running — reserving the block up front,
-# while the heap is clean, is the only thing that reliably prevents that.
+# The reason 'auto' did not save it is worth keeping written down: it measured
+# headroom AT ARM TIME. This runs early in boot, when the heap is nearly empty,
+# so `mem_free() >= size * 4` passed trivially — and then the GUI, its screens and
+# the background services all loaded on top of a heap that was 17 KB smaller than
+# they were built for. A guard that samples before the load it is guarding against
+# is not a guard.
+#
+# 'auto' now also releases the block automatically when free memory falls below
+# RELEASE_FLOOR, so even a device that arms it cannot be starved by it. But the
+# honest summary is that 17 KB is a lot on this board, and holding it should be a
+# deliberate choice made by someone watching `meminfo`.
 TLS_RESERVE_BYTES = 16384 + 1024      # input buffer + record overhead + slack
 _tls_reserve = None
 
@@ -151,10 +159,10 @@ def arm_reserve(size=None, force=False):
     global _tls_reserve
     if _tls_reserve is not None:
         return True
-    mode = 'auto'
+    mode = 'off'
     try:
         import regedit
-        mode = str(regedit.read('Settings.TLS_Reserve') or 'auto').strip().lower()
+        mode = str(regedit.read('Settings.TLS_Reserve') or 'off').strip().lower()
     except Exception:
         pass
     if not force and mode not in ('on', 'auto', 'true', '1'):
@@ -190,6 +198,27 @@ def release_reserve():
     except Exception:
         pass
     return True
+
+
+RELEASE_FLOOR = 40960      # below this much free, the reserve gives itself back
+
+
+def relieve_reserve():
+    """Give the block back if the heap has got tight since it was claimed.
+
+    Called from the shell's idle path. The reserve is only ever worth holding
+    while there is room to spare; once free memory is down near the floor, 17 KB
+    set aside for a hypothetical download is 17 KB the running system needs more.
+    Returns True if it released."""
+    if _tls_reserve is None:
+        return False
+    try:
+        import gc
+        if gc.mem_free() >= RELEASE_FLOOR:
+            return False
+    except Exception:
+        return False
+    return release_reserve()
 
 
 def reserve_state():

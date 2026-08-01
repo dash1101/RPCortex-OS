@@ -143,13 +143,18 @@ def sysinfo(args=None):
         multi("  Flash Free  : {} KB".format(free_flash // 1024))
 
 
-def _largest_block(cap=40960):
+def _largest_block(cap=262144):
     """Biggest block that can actually be allocated right now, by probing.
 
     Free memory is not the number that matters on this device. The GC never
     compacts, so the heap can hold 90 KB of free space with no single unbroken
     run big enough for a TLS handshake (~16.7 KB). Reporting only 'Free' is why
-    'plenty of memory' and 'cannot open HTTPS' kept looking like a contradiction."""
+    'plenty of memory' and 'cannot open HTTPS' kept looking like a contradiction.
+
+    The cap has to sit ABOVE any plausible answer. It was 40 KB, so a healthy
+    device with 223 KB free reported "39 KB largest, 83% fragmented" — the probe
+    hitting its own ceiling, read as catastrophic fragmentation. A diagnostic
+    that invents a problem is worse than none."""
     lo, hi, best = 0, cap, 0
     while lo <= hi:
         mid = (lo + hi) // 2
@@ -176,7 +181,7 @@ def meminfo(args=None):
     multi("  Used  : {} KB  ({}%)".format(alloc // 1024, pct))
     multi("  Free  : {} KB".format(free // 1024))
     big = _largest_block()
-    frag = 100 - (big * 100 // free) if free else 0
+    frag = max(0, 100 - (big * 100 // free)) if free else 0
     multi("  Largest block : {} KB   (fragmentation {}%)".format(big // 1024, frag))
     try:
         import RPCortex as _R
