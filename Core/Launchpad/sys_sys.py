@@ -69,15 +69,24 @@ def safeboot(args=None):
     """Reboot into a maintenance shell with NO background services running, so the
     heap is free enough for a memory-heavy OS update. Background apps (e.g. the Nova
     GUI) hold a lot of RAM, and a full heap can't finish a TLS-backed download.
-    Sets a one-shot flag that launchpad reads at boot to skip service seeding; a
-    normal reboot afterwards restores services."""
-    info("Safe boot: rebooting without background services...")
-    multi("  Once it's up, run your OS update, then reboot normally to restore services.")
+
+    With a command argument (e.g. `safeboot update online`), that command is STAGED:
+    the maintenance boot runs it with full RAM, then reboots to restore services —
+    which is how the UI updates reliably. Bare `safeboot` just drops to maintenance.
+    Sets one-shot flags launchpad reads at boot."""
+    staged = (args or '').strip()
+    if staged:
+        info("Safe boot: rebooting to run '{}' with full RAM...".format(staged))
+    else:
+        info("Safe boot: rebooting without background services...")
+        multi("  Once it's up, run your update, then reboot to restore services.")
     from RPCortex import close_session_log
     close_session_log()
     try:
-        regedit.save("Settings.Safe_Boot", "1")   # one-shot; cleared by launchpad at boot
-        regedit.save("Settings.Startup", "0")      # clean shutdown sentinel
+        regedit.save("Settings.Safe_Boot", "1")    # one-shot; cleared by launchpad
+        if staged:
+            regedit.save("Settings.Safe_Boot_Cmd", staged)
+        regedit.save("Settings.Startup", "0")       # clean shutdown sentinel
     except Exception:
         pass
     _reboot('soft_reset')

@@ -1838,7 +1838,21 @@ def _enter_async_shell(username):
         try:
             import regedit as _re
             if str(_re.read('Settings.Safe_Boot') or '') == '1':
-                _re.save('Settings.Safe_Boot', '')
+                _re.save('Settings.Safe_Boot', '')          # one-shot, cleared first
+                staged = _re.read('Settings.Safe_Boot_Cmd') or ''
+                if staged:
+                    # A staged maintenance task (e.g. an OS/package update from the
+                    # UI): run it now with services skipped (full RAM), then reboot
+                    # to restore them. Cleared before running so a failure can't loop.
+                    _re.save('Settings.Safe_Boot_Cmd', '')
+                    info("Maintenance boot — running staged task: {}".format(staged))
+                    try:
+                        _run_line(staged)
+                    except Exception as _se:
+                        error("Staged task failed: {}".format(_se))
+                    info("Staged task done — rebooting to restore services.")
+                    reboot_now('soft_reset')   # a successful OS update reboots itself first
+                    return
                 warn("Safe boot: background services skipped — extra RAM for maintenance.")
                 warn("Run your OS update now, then reboot to restore services.")
             else:
