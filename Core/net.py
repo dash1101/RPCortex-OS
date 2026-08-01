@@ -422,21 +422,62 @@ def _open_connection(host, port, use_ssl, timeout=15):
             _reclaim_heap()
             gc.collect()
             if not _has_contiguous(_TLS_BLOCK):
-                raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free()))
+                raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free(), _TLS_BLOCK))
         try:
             s = _wrap_tls(s, host)
-        except MemoryError:
-            raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free()))
+        except Exception as e:
+            if _is_oom(e):
+                raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free(), _TLS_BLOCK))
+            raise
     return s
 
 
-_TLS_BLOCK = 10240      # ~ the contiguous heap a TLS handshake needs
+# What a TLS handshake actually needs, derived from the firmware rather than
+# guessed. MicroPython builds mbedTLS with (extmod/mbedtls/mbedtls_config_common.h):
+#
+#     MBEDTLS_SSL_IN_CONTENT_LEN   16384
+#     MBEDTLS_SSL_OUT_CONTENT_LEN   4096
+#
+# and mbedtls_ssl_setup() allocates the input buffer as ONE block of
+# MBEDTLS_SSL_IN_BUFFER_LEN = HEADER_LEN + PAYLOAD_OVERHEAD + IN_CONTENT_LEN,
+# through m_tracked_calloc -- i.e. straight out of the MicroPython GC heap.
+# MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH is not enabled, so the buffers are always
+# full size; there is no way to ask for less from Python.
+#
+# The old value here was 10240, which is roughly 6.5 KB short of the real input
+# buffer. The pre-check therefore PASSED on a heap that could not actually
+# complete a handshake, and the failure surfaced later as a raw errno. A floor
+# that lies is worse than no floor.
+_TLS_IN_BLOCK = 16384 + 512        # input buffer + record header/padding overhead
+_TLS_OUT_BLOCK = 4096 + 256        # output buffer, a second contiguous block
+_TLS_BLOCK = _TLS_IN_BLOCK         # the one that has to be contiguous
+
+# mbedTLS reports an allocation failure as MBEDTLS_ERR_SSL_ALLOC_FAILED, and
+# extmod/modtls_mbedtls.c maps that to mp_raise_OSError(MP_ENOMEM) -- an
+# OSError(12), NOT a MemoryError. Catching only MemoryError meant the actionable
+# message below never once fired for the case it was written for; the user got a
+# bare errno instead. Both are caught now.
+_ENOMEM = 12
 _TLS_OOM_MSG = (
-    "Not enough contiguous RAM for a secure (HTTPS) download — {} B free but the "
-    "heap is fragmented. Large downloads work from a FRESH BOOT: reboot and install "
-    "before opening other apps, or run 'freeup' first. (If using Cloudflare, "
-    "'Always Use HTTPS' forces this path — an http:// URL avoids it.)"
+    "Not enough contiguous RAM for a secure (HTTPS) transfer — {} B free, but the "
+    "handshake needs a single unbroken {} B block and the heap is fragmented. "
+    "Free memory and retry, or reboot and do this first: a fresh boot has the "
+    "least fragmentation. (If using Cloudflare, 'Always Use HTTPS' forces this "
+    "path — an http:// URL avoids it.)"
 )
+
+
+def _is_oom(exc):
+    """True for either shape an out-of-memory takes here: MicroPython's own
+    MemoryError, or the OSError(ENOMEM) that mbedTLS allocation failures become."""
+    if isinstance(exc, MemoryError):
+        return True
+    if isinstance(exc, OSError):
+        try:
+            return exc.args and exc.args[0] == _ENOMEM
+        except Exception:
+            return False
+    return False
 
 
 def _has_contiguous(n):
@@ -676,7 +717,7 @@ async def _aopen_connection(host, port, use_ssl, timeout=15):
             _reclaim_heap()
             gc.collect()
             if not _has_contiguous(_TLS_BLOCK):
-                raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free()))
+                raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free(), _TLS_BLOCK))
         try:
             import ssl as _ssl
         except ImportError:
@@ -699,9 +740,16 @@ async def _aopen_connection(host, port, use_ssl, timeout=15):
                 ctx.verify_mode = _ssl.CERT_NONE
             except Exception:
                 pass
-        return await asyncio.wait_for(
-            asyncio.open_connection(host, port, ssl=ctx, server_hostname=host),
-            timeout)
+        try:
+            return await asyncio.wait_for(
+                asyncio.open_connection(host, port, ssl=ctx, server_hostname=host),
+                timeout)
+        except Exception as e:
+            # Same two shapes as the sync path: a MicroPython MemoryError, or the
+            # OSError(ENOMEM) an mbedTLS allocation failure becomes.
+            if _is_oom(e):
+                raise MemoryError(_TLS_OOM_MSG.format(gc.mem_free(), _TLS_BLOCK))
+            raise
     return await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
 
 
