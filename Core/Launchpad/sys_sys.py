@@ -1015,18 +1015,16 @@ def _this_machine():
 
 
 def _platform_ok(manifest):
-    """Is this build meant for THIS board?
+    """Which boards a release names as its targets, and whether this is one.
 
-    A release can only run where it fits. v1.0 needs an RP2350 or an ESP32-S3;
-    offering it to an RP2040 produces a device that idles at its RAM ceiling and
-    crashes, and the only way back is a reflash.
+    INFORMATIONAL ONLY — nothing refuses an update on the strength of it. A
+    release states what it was built for and the owner of the device decides. An
+    OS that will not install on hardware its owner chose is worse than one that
+    runs badly and says so; a bad fit is recoverable by reflashing, a lock-out is
+    just a wall.
 
-    A manifest with no 'platforms' key matches everything, which keeps older
-    manifests working. NOTE the limit of this: it protects devices running THIS
-    code. A device on an older release is running an updater that predates the
-    field entirely and will take whatever the manifest offers — which is why
-    promoting a platform-restricted build to the channel older devices follow is
-    a decision about them, not about this check."""
+    So v1.0 tells an RP2040 that it targets RP2350 and ESP32-S3, and then installs
+    if asked. A manifest with no 'platforms' key says nothing at all."""
     want = manifest.get('platforms')
     if not want:
         return True, ''
@@ -1112,14 +1110,12 @@ def _update_check():
     info("Latest version  : {}  (build {})".format(
         latest, manifest.get('build', '?')), p="Update")
 
-    # Refuse a build that does not target this board, before offering it. An
-    # update that cannot run is worse than no update: it replaces a working OS.
+    # Say what the release targets when this board is not on the list, then carry
+    # on. This is a note, not a gate: the update still installs if asked.
     fits, want = _platform_ok(manifest)
     if not fits:
-        error("{} targets {} — this board is not one of them.".format(latest, want),
-              p="Update")
-        multi("  Staying on the installed release.")
-        return None
+        warn("{} targets {}. It will install here, but was not built for "
+             "this board.".format(latest, want), p="Update")
 
     # Build-aware: a newer version, OR the same version with a different build id
     # (the server re-published this version) both count as an update. This lets
