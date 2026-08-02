@@ -994,6 +994,52 @@ def _build_n(b):
         return -1
 
 
+def _this_machine():
+    """A normalised identity for the board, for matching a manifest's platforms.
+
+    os.uname().machine is the specific string ('Raspberry Pi Pico 2 W with
+    RP2350'); sys.platform is the coarse family ('rp2', 'esp32'). Both are
+    folded to uppercase with spaces removed so a manifest can list either a chip
+    ('RP2350') or a family ('ESP32') and match on a substring."""
+    parts = []
+    try:
+        import uos
+        parts.append(str(uos.uname().machine))
+    except Exception:
+        pass
+    try:
+        parts.append(str(sys.platform))
+    except Exception:
+        pass
+    return ''.join(parts).upper().replace(' ', '').replace('-', '')
+
+
+def _platform_ok(manifest):
+    """Is this build meant for THIS board?
+
+    A release can only run where it fits. v1.0 needs an RP2350 or an ESP32-S3;
+    offering it to an RP2040 produces a device that idles at its RAM ceiling and
+    crashes, and the only way back is a reflash.
+
+    A manifest with no 'platforms' key matches everything, which keeps older
+    manifests working. NOTE the limit of this: it protects devices running THIS
+    code. A device on an older release is running an updater that predates the
+    field entirely and will take whatever the manifest offers — which is why
+    promoting a platform-restricted build to the channel older devices follow is
+    a decision about them, not about this check."""
+    want = manifest.get('platforms')
+    if not want:
+        return True, ''
+    if isinstance(want, str):
+        want = [want]
+    me = _this_machine()
+    for tok in want:
+        t = str(tok).upper().replace(' ', '').replace('-', '')
+        if t and t in me:
+            return True, ''
+    return False, ', '.join(str(w) for w in want)
+
+
 def _vt(v):
     """Parse 'v0.8.2' / '0.8.2-rc1' into a comparable tuple."""
     try:
@@ -1065,6 +1111,15 @@ def _update_check():
     latest = manifest.get('version', '?')
     info("Latest version  : {}  (build {})".format(
         latest, manifest.get('build', '?')), p="Update")
+
+    # Refuse a build that does not target this board, before offering it. An
+    # update that cannot run is worse than no update: it replaces a working OS.
+    fits, want = _platform_ok(manifest)
+    if not fits:
+        error("{} targets {} — this board is not one of them.".format(latest, want),
+              p="Update")
+        multi("  Staying on the installed release.")
+        return None
 
     # Build-aware: a newer version, OR the same version with a different build id
     # (the server re-published this version) both count as an update. This lets
