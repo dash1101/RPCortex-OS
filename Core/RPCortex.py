@@ -154,28 +154,37 @@ _tls_reserve = None
 def arm_reserve(size=None, force=False):
     """Claim the contiguous TLS block. Call once at boot, while the heap is clean.
 
-    ON by default (Settings.TLS_Reserve = off disables it), because a measured
-    board says it is the difference between HTTPS working and not. After ordinary
-    use with the Nova D1 GUI resident, a Pico 2 W sat at 52 KB free with a largest
-    block of 10 KB — comfortable by the free figure, and unable to start a
-    handshake that needs 16.9 KB unbroken. `update check` failed every time. With
-    the block claimed at boot the same check succeeds.
+    OFF by default. Turning it on was tried and MEASURED, and the measurement is
+    worth keeping because the result is not the obvious one.
 
-    The reason this is safe to leave on, when an earlier attempt at it starved the
-    board, is that the block is now given BACK: launchpad._auto_reclaim calls
-    relieve_reserve() on every scheduler tick, so once free memory reaches
-    RELEASE_FLOOR the 17 KB returns to the running system. Previously nothing ever
-    called it and the reserve was a permanent tax.
+    From a fresh boot it works: a Pico 2 W that had been failing `update check`
+    completed it with the block claimed. But a soak told a different story. After
+    a long session the same board sat at 34 KB free WITH the reserve held — the
+    17 KB comes straight out of the working set — and `update check` still failed,
+    now with MBEDTLS_ERR_MPI_ALLOC_FAILED. The handshake had got past the input
+    buffer the reserve guarantees and died on the RSA/MPI allocations behind it.
+    Ordinary commands began failing at 'allocating 2071 bytes' in the same state.
+
+    So the reserve does not fix a degraded heap; it moves the failure later and
+    costs 17 KB of the memory the rest of the system needs. From a fresh boot,
+    HTTPS tends to work anyway — which is where the earlier "verified" result came
+    from, and why it did not generalise.
+
+    It remains available (`Settings.TLS_Reserve = on`) for a device that mostly
+    idles and needs one reliable download, and relieve_reserve() is now actually
+    called so it is no longer a permanent tax. NOTE: the release was not observed
+    firing on-device at 34 KB free with RELEASE_FLOOR at 40 KB — DEVICE-UNCONFIRMED,
+    and the reason to leave the default off until it is understood.
 
     Returns True if the reserve is held. Never raises: failing to arm just means
     the device behaves exactly as it did before."""
     global _tls_reserve
     if _tls_reserve is not None:
         return True
-    mode = 'on'
+    mode = 'off'
     try:
         import regedit
-        mode = str(regedit.read('Settings.TLS_Reserve') or 'on').strip().lower()
+        mode = str(regedit.read('Settings.TLS_Reserve') or 'off').strip().lower()
     except Exception:
         pass
     if not force and mode not in ('on', 'auto', 'true', '1'):

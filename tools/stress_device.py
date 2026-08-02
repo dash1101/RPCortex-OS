@@ -138,8 +138,13 @@ def main():
     # device's.
     d.s.write(b'\x03\r'); time.sleep(1)
     d.login()                       # handles a bare REPL, then logs in
+    # The GUI autostarts from services.cfg, so stop it first or the "before the
+    # GUI" baseline is really "with the GUI", and every later delta is measured
+    # against the wrong number.
+    d.send('novagui stop', 6.0)
+    time.sleep(3)
     d.send('freeup', 4.0)           # start from a known-clean cache
-    log('=== 1. baseline, fresh boot, GUI not yet started ===')
+    log('=== 1. baseline, GUI stopped ===')
     f0, b0 = d.mem()
     log('   free %s KB   largest %s KB' % (f0, b0))
     d.check(f0 and f0 > 180, 'plenty of headroom before the GUI (%s KB)' % f0)
@@ -152,7 +157,12 @@ def main():
     log('   free %s KB   largest %s KB   (GUI costs %s KB)'
         % (f1, b1, (f0 - f1) if f0 and f1 else '?'))
     d.check(f1 and f1 > 60, 'usable headroom WITH the GUI running (%s KB)' % f1)
-    d.check(b1 and b1 >= 17, 'a TLS handshake could still start (%s KB block)' % b1)
+    # With the reserve armed the block is HELD, so the free-block probe can read
+    # low and a handshake still succeed -- that is the whole point of it. Check the
+    # reserve rather than the probe.
+    o = d.send('meminfo', 6.0)
+    d.check('held,' in o,
+            'the TLS reserve is held with the GUI running (%r)' % o.strip()[-70:])
 
     log('   GUI service state: ' + ('running' if 'running' in d.send('novagui status', 5.0) else 'STOPPED'))
 
@@ -160,7 +170,8 @@ def main():
     cmds = ['ver', 'sysinfo', 'uptime', 'date', 'df', 'meminfo', 'defrag',
             'radio status', 'd1 status', 'd1 pins', 'novagui status',
             'd1 radar', 'wifi status', 'pkg list', 'users', 'which ls',
-            'echo hi', 'help']
+            'echo hi', 'help', 'update channel', 'd1 incognito status',
+            'd1 web', 'ls /Core', 'free', 'history']
     for rnd in (1, 2):
         for c in cmds:
             o = d.send(c, 3.2)
@@ -194,6 +205,18 @@ def main():
     d.check(f3 and f3 > 40, 'still has headroom (%s KB)' % f3)
     d.check(d.alive(), 'the shell is still responsive')
 
+    log('\n=== 5b. HTTPS actually works after all that ===')
+    # The check this whole session was about: after sustained use, can the device
+    # still start a TLS handshake? Before the reserve was armed by default it
+    # could not -- 52 KB free, largest block 10 KB, and every `update check`
+    # failed on a handshake needing 16.9 KB unbroken.
+    o = d.send('update check', 50.0)
+    d.check('Latest version' in o or 'up to date' in o.lower(),
+            'update check completes over HTTPS after heavy use (%r)'
+            % o.strip()[-110:])
+    d.check('contiguous' not in o.lower(),
+            'and does not fail for want of a contiguous block')
+
     log('\n=== 6. defrag recovers ===')
     o = d.send('defrag', 8.0)
     f4, b4 = d.mem()
@@ -226,6 +249,8 @@ def main():
     f5, b5 = d.mem()
     log('   after reboot with GUI: free %s KB  largest %s KB' % (f5, b5))
     d.check(f5 and f5 > 60, 'boots with headroom (%s KB)' % f5)
+    o = d.send('meminfo', 6.0)
+    d.check('held,' in o, 'and the TLS reserve is re-armed at boot')
 
     log('\n=== RESULT: %d/%d checks passed ===' % (d.checks - d.fails, d.checks))
     log('memory across the run: %s -> %s -> %s -> %s KB' % (f0, f1, f3, f5))
