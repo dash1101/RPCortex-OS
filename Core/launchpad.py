@@ -1710,6 +1710,26 @@ def _auto_reclaim():
     Returns True if it reclaimed."""
     try:
         import gc as _gc
+        # Give the TLS reserve back BEFORE reclaiming anything else. It is 17 KB
+        # held for a download that may never happen, and on a tight heap the
+        # running system needs it more. This call is what makes arming the reserve
+        # safe to leave on: without it the block was taken at boot and never
+        # returned, which is exactly how enabling the reserve starved the board
+        # the first time it was tried. RPCortex.relieve_reserve is a no-op unless
+        # free has actually fallen to the floor.
+        #
+        # And take it BACK once there is room again. Without this the reserve is a
+        # one-way door: released the first time free dipped, then only re-armed
+        # after a completed transfer — so the one thing it exists for would find it
+        # already gone, silently, with nothing on screen to say so.
+        try:
+            import RPCortex as _R
+            if not _R.relieve_reserve():
+                held, _sz = _R.reserve_state()
+                if not held and _gc.mem_free() > _R.RELEASE_FLOOR * 2:
+                    _R.arm_reserve()
+        except Exception:
+            pass
         if not _cmd_cache:
             return False
         free = _gc.mem_free()

@@ -154,15 +154,28 @@ _tls_reserve = None
 def arm_reserve(size=None, force=False):
     """Claim the contiguous TLS block. Call once at boot, while the heap is clean.
 
+    ON by default (Settings.TLS_Reserve = off disables it), because a measured
+    board says it is the difference between HTTPS working and not. After ordinary
+    use with the Nova D1 GUI resident, a Pico 2 W sat at 52 KB free with a largest
+    block of 10 KB — comfortable by the free figure, and unable to start a
+    handshake that needs 16.9 KB unbroken. `update check` failed every time. With
+    the block claimed at boot the same check succeeds.
+
+    The reason this is safe to leave on, when an earlier attempt at it starved the
+    board, is that the block is now given BACK: launchpad._auto_reclaim calls
+    relieve_reserve() on every scheduler tick, so once free memory reaches
+    RELEASE_FLOOR the 17 KB returns to the running system. Previously nothing ever
+    called it and the reserve was a permanent tax.
+
     Returns True if the reserve is held. Never raises: failing to arm just means
     the device behaves exactly as it did before."""
     global _tls_reserve
     if _tls_reserve is not None:
         return True
-    mode = 'off'
+    mode = 'on'
     try:
         import regedit
-        mode = str(regedit.read('Settings.TLS_Reserve') or 'off').strip().lower()
+        mode = str(regedit.read('Settings.TLS_Reserve') or 'on').strip().lower()
     except Exception:
         pass
     if not force and mode not in ('on', 'auto', 'true', '1'):
@@ -171,11 +184,19 @@ def arm_reserve(size=None, force=False):
     try:
         import gc
         gc.collect()
-        if mode == 'auto' and not force:
+        if not force:
             # Don't take the last of a tight heap — that would make the very
-            # problem it exists to prevent strictly worse.
-            if gc.mem_free() < size * 4:
-                return False
+            # problem this exists to prevent strictly worse. Applied to every
+            # mode, not just 'auto': there is no board on which claiming the
+            # block is worth doing when there is barely room for it.
+            #
+            # Its own try: a port without gc.mem_free() should still get the
+            # reserve, not silently lose it to a failed headroom check.
+            try:
+                if gc.mem_free() < size * 4:
+                    return False
+            except Exception:
+                pass
         _tls_reserve = bytearray(size)
         return True
     except Exception:
